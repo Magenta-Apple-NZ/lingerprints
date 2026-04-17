@@ -4,13 +4,17 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --timeout 120
+    # One gunicorn worker so the in-process lock around orders.json is
+    # actually sufficient. If we scale out, switch to SQLite or Postgres.
+    startCommand: gunicorn app:app --workers 1 --timeout 120
     envVars:
       - key: OPENAI_API_KEY
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
       - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
         sync: false
       - key: FLASK_SECRET_KEY
         generateValue: true

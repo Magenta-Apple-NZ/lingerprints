@@ -23,17 +23,44 @@ python app.py
 
 Open http://localhost:5000 — upload a photo, pick a style, pick a product, pay with Stripe test card `4242 4242 4242 4242` (any future expiry, any CVC).
 
+### Local Stripe webhook
+
+The Printify order is created by a Stripe webhook (`checkout.session.completed`),
+not inline on `/success`. To exercise the full flow locally, run the Stripe CLI
+in a second terminal:
+
+```bash
+# one-time
+brew install stripe/stripe-cli/stripe   # macOS; stripe.com/docs/stripe-cli for others
+stripe login
+
+# every dev session
+stripe listen --forward-to localhost:5000/webhooks/stripe
+```
+
+The CLI prints a `whsec_...` signing secret on first run — paste it into
+`STRIPE_WEBHOOK_SECRET` in `.env`, then restart `python app.py`. Every completed
+Stripe Checkout will now fire the webhook and create a Printify order. Skip this
+step and payments will still succeed, but Printify won't see them.
+
 ## Deploy to Render (10 minutes)
 
 1. Push this folder to a GitHub repo.
 2. In Render, click **New → Blueprint** and point it at your repo.
    Render will read `render.yaml` automatically.
-3. When prompted, paste the three secret env vars:
+3. When prompted, paste the secret env vars:
    - `OPENAI_API_KEY`
    - `STRIPE_SECRET_KEY`
    - `STRIPE_PUBLISHABLE_KEY`
-   (`FLASK_SECRET_KEY` is auto-generated.)
-4. First build ~2 min. Then hit the live URL.
+   - `PRINTIFY_API_KEY`
+   - `STRIPE_WEBHOOK_SECRET` — *temporarily leave blank, set in step 5*
+   (`FLASK_SECRET_KEY` and `ADMIN_TOKEN` are auto-generated.)
+4. First build ~2 min. Hit the live URL to confirm the app boots.
+5. In Stripe Dashboard → Developers → Webhooks → **Add endpoint**:
+   - URL: `https://your-render-url/webhooks/stripe`
+   - Events: `checkout.session.completed`
+   - Copy the signing secret (`whsec_...`), paste it into `STRIPE_WEBHOOK_SECRET`
+     in Render's env vars, and redeploy.
 
 ### Free tier caveats
 - Instance sleeps after 15 min idle (first request ~30 s cold start).
@@ -45,46 +72,24 @@ Open http://localhost:5000 — upload a photo, pick a style, pick a product, pay
 | Route | What it does |
 |---|---|
 | `/` | Landing: upload form + style picker |
-| `POST /generate` | Downsizes the photo to 1024px, calls OpenAI `images.edit` with a style prompt, saves output to `static/generated/` |
-| `/result` | Before/after, plus 4 product cards (canvas, framed, mug, tee) |
-| `/select/<key>` | Puts the product in the session, goes to checkout |
-| `/checkout` | Creates a Stripe Checkout Session (hosted) with US shipping |
-| `/success` | Loads the Stripe session, calls `create_printify_order_stub` (Phase 2 seam) |
-| `/admin/printify?token=<ADMIN_TOKEN>` | Read-only peek at your Printify shops + products + variant IDs. Returns 404 unless the token matches. |
-| `/healthz` | For Render health checks |
+| `POST /generate` | Downsizes photo, removes background, calls OpenAI `gpt-image-1` with a stability-framework prompt, saves output to `static/generated/` |
+| `/result` | Before/after, plus product cards with variant picker |
+| `POST /select/<key>` | Adds product + variant to the cart |
+| `/cart` | Cart view — qty controls, remove, subtotal, checkout button |
+| `/cart/update/<i>`, `/cart/remove/<i>`, `/cart/clear` | Cart mutations |
+| `/checkout` | Creates a Stripe Checkout Session from the cart and stores a pending order record server-side |
+| `/success` | Displays the order; reads fulfilment status from the order register. Does NOT create Printify orders. |
+| `POST /webhooks/stripe` | Receives `checkout.session.completed`, verifies signature, creates one Printify order per completed checkout. Idempotent. |
+| `/admin/printify?token=<ADMIN_TOKEN>` | Read-only peek at Printify shops + products + variant IDs. 404 without a matching token. |
+| `/healthz` | Render health check |
 
-## Phase 2 — flip Printify live
-
-The seam is `create_printify_order_stub(payload)` in `app.py`.
-
-1. Products built in Printify — done. Hit
-   `http://localhost:5000/admin/printify?token=<ADMIN_TOKEN>` to list your
-   shops, products, and variant IDs on one page.
-2. `PRINTIFY_API_KEY` and `ADMIN_TOKEN` are already wired through `.env` and
-   `render.yaml`.
-3. Map each `product_key` in `PRODUCTS` (app.py) to a dict holding its Printify
-   `shop_id`, `printify_product_id`, and `variant_id`.
-4. **Move artwork hosting off local disk first** — upload each generated
-   image to Cloudinary or S3 during `/generate`, and persist the public URL
-   in the session. Printify's servers must be able to fetch the image, so
-   `localhost` or Render-static paths won't work reliably.
-5. Replace the stub with a real
-   `POST https://api.printify.com/v1/shops/{shop_id}/orders.json` call:
-   `address_to` from `payload["recipient"]`, `line_items[].product_id` and
-   `variant_id` from the mapping, and the artwork's public URL attached to
-   the line item.
-6. Post orders as drafts first (don't immediately send to production) —
-   inspect in Printify's dashboard, approve manually for the first few
-   orders, then flip to auto-submit once you trust the flow.
-7. Move order creation off the `/success` redirect onto a Stripe webhook
-   (`checkout.session.completed`) — prevents duplicates on refresh and
-   handles async payment methods.
-
-## Known trade-offs in Hour 1
+## Known trade-offs
 
 - `gpt-image-1` takes 15–30 s. The submit button shows a loading state.
-- Generated images live on local disk. Fine for a demo, swap for object
-  storage before Phase 2.
-- No persistent database. Order metadata rides on Stripe + session.
-- Product mockups are CSS tricks, not real Printify renderings.
-- No webhook yet — success page handles post-payment work inline.
+- Generated images live on local disk. Fine for a demo, swap for S3/Cloudinary
+  once you outgrow free-tier Render (files wipe on each redeploy).
+- `orders.json` is also local disk. Single-instance, free-tier-friendly. Move to
+  SQLite/Postgres if we scale out or need an admin order history view.
+- Product mockups are CSS tricks, not Printify-rendered product photos.
+- Shipping is charged at $0. Printify invoices us for real shipping — wire up
+  Printify's shipping quote API before anything real launches.

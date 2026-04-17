@@ -48,8 +48,12 @@
   {% endif %}
 
   <p class="muted-note">
-    {% if printify_ok %}
+    {% if fulfilment_status == "submitted" %}
       Your order has been sent to production. You'll receive a shipping confirmation by email once it dispatches.
+    {% elif fulfilment_status == "pending" %}
+      Your payment is confirmed. We're sending this to production — you'll get a confirmation email with tracking details shortly.
+    {% elif fulfilment_status == "failed" %}
+      Your payment is confirmed, but we had a hiccup handing the order off to production. Our team has been notified and will follow up by email — you won't be charged twice.
     {% else %}
       Your payment is confirmed. We'll follow up by email with production and shipping details.
     {% endif %}

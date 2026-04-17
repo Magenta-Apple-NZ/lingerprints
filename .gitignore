@@ -6,3 +6,4 @@ venv/
 .DS_Store
 static/generated/*
 !static/generated/.gitkeep
+static/orders.json

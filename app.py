@@ -12,9 +12,12 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import logging
 import os
+import threading
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -395,6 +398,185 @@ def inject_cart_count():
 
 
 # --------------------------------------------------------------------------
+# Order register
+#
+# Server-side record of orders keyed by Stripe checkout session id. Used to:
+#   1. Hand the cart snapshot to the Stripe webhook (which runs in a
+#      different request context from the user's browser, so the Flask
+#      session cookie is invisible to it).
+#   2. Dedupe Printify order creation when Stripe retries the webhook.
+#   3. Let /success display the fulfilment status once the webhook has run.
+#
+# Implementation: a single JSON file under static/, guarded by a process
+# lock. Fine for free-tier Render (single instance). For multi-instance or
+# persistent-disk setups we'd switch to SQLite or Postgres.
+# --------------------------------------------------------------------------
+
+ORDERS_FILE = Path(app.static_folder) / "orders.json"
+_orders_lock = threading.Lock()
+
+
+def _load_orders() -> dict:
+    if not ORDERS_FILE.exists():
+        return {}
+    try:
+        return json.loads(ORDERS_FILE.read_text())
+    except Exception:
+        app.logger.exception("orders.json unreadable, starting fresh")
+        return {}
+
+
+def _save_orders(orders: dict) -> None:
+    tmp = ORDERS_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(orders, indent=2, sort_keys=True))
+    tmp.replace(ORDERS_FILE)
+
+
+def register_pending_order(session_id: str, cart: list[dict]) -> None:
+    with _orders_lock:
+        orders = _load_orders()
+        orders[session_id] = {
+            "status": "pending",
+            "cart": cart,
+            "printify_order_id": None,
+            "error": None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        _save_orders(orders)
+
+
+def mark_order_submitted(session_id: str, printify_order_id: str) -> None:
+    with _orders_lock:
+        orders = _load_orders()
+        if session_id in orders:
+            orders[session_id]["status"] = "submitted"
+            orders[session_id]["printify_order_id"] = printify_order_id
+            orders[session_id]["submitted_at"] = datetime.now(timezone.utc).isoformat()
+            _save_orders(orders)
+
+
+def mark_order_failed(session_id: str, error: str) -> None:
+    with _orders_lock:
+        orders = _load_orders()
+        if session_id in orders:
+            orders[session_id]["status"] = "failed"
+            orders[session_id]["error"] = error[:500]
+            _save_orders(orders)
+
+
+def get_order(session_id: str) -> dict | None:
+    with _orders_lock:
+        return _load_orders().get(session_id)
+
+
+def is_order_processed(session_id: str) -> bool:
+    order = get_order(session_id)
+    return order is not None and order.get("status") in ("submitted", "failed")
+
+
+# --------------------------------------------------------------------------
+# Fulfilment pipeline
+#
+# Extracted so /webhooks/stripe is the primary caller, and /success never
+# creates orders inline (the old behaviour that risked double-submitting on
+# a page refresh).
+# --------------------------------------------------------------------------
+
+
+def fulfil_checkout(checkout_session) -> tuple[bool, str]:
+    """
+    Given a fully-populated Stripe checkout session, upload artworks to
+    Printify and create one Printify order. Idempotent: safe to call more
+    than once for the same Stripe session — second call is a no-op.
+
+    Returns (ok, message_or_order_id).
+    """
+    session_id = checkout_session.id
+
+    if is_order_processed(session_id):
+        existing = get_order(session_id) or {}
+        return True, existing.get("printify_order_id") or "already processed"
+
+    record = get_order(session_id)
+    if not record:
+        return False, "no pending order record for this session"
+
+    cart = record.get("cart") or []
+    customer_details = checkout_session.customer_details
+    shipping_address = customer_details.address if customer_details else None
+    if not cart or not customer_details or not shipping_address:
+        mark_order_failed(session_id, "missing cart or customer details")
+        return False, "missing cart or customer details"
+
+    items = cart_items_decorated(cart)
+
+    # Dedupe artwork uploads across the cart.
+    artwork_urls: dict[str, str] = {}
+    for item in items:
+        artwork = item["artwork"]
+        if artwork in artwork_urls:
+            continue
+        try:
+            artwork_urls[artwork] = upload_artwork_to_printify(GENERATED_DIR / artwork)
+        except Exception as exc:
+            app.logger.exception("Printify image upload failed for %s", artwork)
+            artwork_urls[artwork] = ""
+
+    printify_line_items = []
+    for item in items:
+        image_url = artwork_urls.get(item["artwork"])
+        if not image_url:
+            continue
+        product = PRODUCTS.get(item["product_key"], {})
+        if not product:
+            continue
+        printify_line_items.append({
+            "blueprint_id": product["blueprint_id"],
+            "print_provider_id": product["print_provider_id"],
+            "variant_id": item["variant_id"],
+            "quantity": item["qty"],
+            "print_areas": {product["print_position"]: image_url},
+        })
+
+    if not printify_line_items:
+        mark_order_failed(session_id, "no printable line items")
+        return False, "no printable line items"
+
+    name_parts = (customer_details.name or "").split(" ", 1)
+    payload = {
+        "external_id": session_id,  # Printify will reject duplicate external_ids
+        "line_items": printify_line_items,
+        "shipping_method": 1,
+        "send_shipping_notification": False,
+        "recipient": {
+            "first_name": name_parts[0],
+            "last_name": name_parts[1] if len(name_parts) > 1 else "",
+            "email": customer_details.email or "",
+            "country": shipping_address.country or "US",
+            "region": shipping_address.state or "",
+            "address1": shipping_address.line1 or "",
+            "address2": shipping_address.line2 or "",
+            "city": shipping_address.city or "",
+            "zip": shipping_address.postal_code or "",
+        },
+    }
+
+    try:
+        printify_order_id = create_printify_order(payload)
+    except Exception as exc:
+        app.logger.exception("Printify order creation failed for %s", session_id)
+        mark_order_failed(session_id, f"{exc.__class__.__name__}: {exc}")
+        return False, str(exc)
+
+    mark_order_submitted(session_id, printify_order_id)
+    app.logger.info(
+        "Printify order submitted: sid=%s printify=%s lines=%s",
+        session_id, printify_order_id, len(printify_line_items),
+    )
+    return True, printify_order_id
+
+
+# --------------------------------------------------------------------------
 # Routes
 # --------------------------------------------------------------------------
 
@@ -616,9 +798,15 @@ def checkout():
         flash(f"Checkout unavailable right now. ({exc.__class__.__name__})")
         return redirect(url_for("cart_view"))
 
-    # Stash the cart snapshot so /success can rebuild the order even though
-    # we intentionally don't round-trip the full cart through Stripe metadata.
-    session["pending"] = {"sid": checkout_session.id, "cart": cart}
+    # Persist the cart server-side keyed by the Stripe session id. This is
+    # the record the webhook will read when it fires — the Flask session
+    # cookie is invisible to the webhook because the webhook request comes
+    # from Stripe, not the customer's browser.
+    register_pending_order(checkout_session.id, cart)
+
+    # Also keep a hint in the user's session cookie so /success knows which
+    # checkout just happened (for cart-clearing UX, not for fulfilment).
+    session["pending_sid"] = checkout_session.id
     session.modified = True
 
     return redirect(checkout_session.url, code=303)
@@ -626,6 +814,11 @@ def checkout():
 
 @app.route("/success")
 def success():
+    """
+    Thank-you page. Does NOT create the Printify order — that's the
+    webhook's job. We just display what the customer paid for and show
+    whatever fulfilment state the webhook has reached.
+    """
     session_id = request.args.get("session_id")
     if not session_id:
         return redirect(url_for("index"))
@@ -643,97 +836,82 @@ def success():
     customer_details = checkout_session.customer_details
     shipping_address = customer_details.address if customer_details else None
 
-    # Pull the cart snapshot that /checkout stashed before redirecting to Stripe.
-    # Guard: only accept the snapshot if it matches the Stripe session we just
-    # returned from (defends against stale pending state in the cookie).
-    pending = session.get("pending") or {}
-    cart_snapshot: list[dict] = []
-    if pending.get("sid") == checkout_session.id:
-        cart_snapshot = list(pending.get("cart", []))
-
+    # Read fulfilment state from the order register. If the webhook has
+    # already fired, we'll see status="submitted" and a printify order id.
+    # Otherwise it's "pending" and we tell the customer we're processing.
+    order_record = get_order(session_id) or {}
+    cart_snapshot = order_record.get("cart") or []
     items = cart_items_decorated(cart_snapshot)
-    order_id = f"AIP-{uuid.uuid4().hex[:8].upper()}"  # fallback
-
-    printify_ok = False
-    if items and customer_details and shipping_address:
-        # Dedupe artwork uploads: if the same artwork appears in multiple
-        # line items we only hit Printify's /uploads/images.json once.
-        artwork_urls: dict[str, str] = {}
-        for item in items:
-            artwork = item["artwork"]
-            if artwork in artwork_urls:
-                continue
-            try:
-                artwork_urls[artwork] = upload_artwork_to_printify(
-                    GENERATED_DIR / artwork
-                )
-            except Exception:
-                app.logger.exception("Printify image upload failed for %s", artwork)
-                artwork_urls[artwork] = ""
-
-        # Build one Printify order with all line items.
-        printify_line_items = []
-        for item in items:
-            image_url = artwork_urls.get(item["artwork"])
-            if not image_url:
-                continue
-            product = PRODUCTS.get(item["product_key"], {})
-            if not product:
-                continue
-            printify_line_items.append({
-                "blueprint_id": product["blueprint_id"],
-                "print_provider_id": product["print_provider_id"],
-                "variant_id": item["variant_id"],
-                "quantity": item["qty"],
-                "print_areas": {product["print_position"]: image_url},
-            })
-
-        if printify_line_items:
-            name_parts = (customer_details.name or "").split(" ", 1)
-            printify_payload = {
-                "external_id": checkout_session.id,
-                "line_items": printify_line_items,
-                "shipping_method": 1,
-                "send_shipping_notification": False,
-                "recipient": {
-                    "first_name": name_parts[0],
-                    "last_name": name_parts[1] if len(name_parts) > 1 else "",
-                    "email": customer_details.email or "",
-                    "country": shipping_address.country or "US",
-                    "region": shipping_address.state or "",
-                    "address1": shipping_address.line1 or "",
-                    "address2": shipping_address.line2 or "",
-                    "city": shipping_address.city or "",
-                    "zip": shipping_address.postal_code or "",
-                },
-            }
-            try:
-                order_id = create_printify_order(printify_payload)
-                printify_ok = True
-                app.logger.info(
-                    "Printify order created: %s (lines=%s)",
-                    order_id, len(printify_line_items),
-                )
-            except Exception:
-                app.logger.exception("Printify order creation failed")
-
-    # Whether Printify succeeded or not, the customer paid — clear their cart
-    # and pending snapshot so a refresh can't double-submit the order.
-    if pending.get("sid") == checkout_session.id:
-        session.pop("pending", None)
-        cart_clear()
-
     total_cents = sum(item["line_cents"] for item in items)
+
+    fulfilment_status = order_record.get("status", "unknown")
+    printify_order_id = order_record.get("printify_order_id")
+    display_order_id = printify_order_id or f"AIP-{session_id[-8:].upper()}"
+
+    # Clear the user's cart now that the payment is confirmed. Guarded on
+    # the session id so a user who lands on someone else's /success link
+    # doesn't have their cart wiped.
+    if session.get("pending_sid") == session_id:
+        session.pop("pending_sid", None)
+        cart_clear()
 
     return render_template(
         "success.html",
-        order_id=order_id,
+        order_id=display_order_id,
         items=items,
         total_cents=total_cents,
         customer_email=customer_details.email if customer_details else None,
         address=shipping_address,
-        printify_ok=printify_ok,
+        printify_ok=(fulfilment_status == "submitted"),
+        fulfilment_status=fulfilment_status,
     )
+
+
+@app.route("/webhooks/stripe", methods=["POST"])
+def stripe_webhook():
+    """
+    Stripe calls this when a checkout completes. Verifies the signature,
+    then hands off to fulfil_checkout() which creates the Printify order.
+    Idempotent: repeated webhook fires for the same session are a no-op.
+    """
+    webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
+    if not webhook_secret:
+        app.logger.error("STRIPE_WEBHOOK_SECRET is not set")
+        return "webhook secret not configured", 500
+
+    payload = request.data
+    sig_header = request.headers.get("Stripe-Signature", "")
+
+    try:
+        _ensure_stripe()
+        event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+    except ValueError:
+        app.logger.warning("Stripe webhook: invalid payload")
+        return "invalid payload", 400
+    except stripe.error.SignatureVerificationError:
+        app.logger.warning("Stripe webhook: bad signature")
+        return "bad signature", 400
+
+    event_type = event["type"]
+    app.logger.info("Stripe webhook event: %s", event_type)
+
+    if event_type == "checkout.session.completed":
+        session_id = event["data"]["object"]["id"]
+        # Re-retrieve with expansions so we have customer_details + address.
+        try:
+            checkout_session = stripe.checkout.Session.retrieve(
+                session_id, expand=["customer_details"]
+            )
+        except Exception:
+            app.logger.exception("Stripe retrieve failed in webhook for %s", session_id)
+            return "", 200  # ack so Stripe doesn't retry forever
+
+        ok, detail = fulfil_checkout(checkout_session)
+        if not ok:
+            app.logger.warning("Fulfilment failed for %s: %s", session_id, detail)
+
+    # Always 200 to a valid, signed event so Stripe stops retrying.
+    return "", 200
 
 
 
