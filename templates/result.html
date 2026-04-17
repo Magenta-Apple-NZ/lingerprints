@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Your AI artwork — AI Photos{% endblock %}
+
+{% block content %}
+<section class="result-hero">
+  <h1>Your artwork is ready</h1>
+  <p class="lead">Style: <strong>{{ style.label }}</strong>. Not quite right? <a href="{{ url_for('index') }}">Try another style →</a></p>
+</section>
+
+<section class="before-after">
+  {% if original %}
+  <figure>
+    <img src="{{ url_for('static', filename='generated/' ~ original) }}" alt="Original photo">
+    <figcaption>Original</figcaption>
+  </figure>
+  {% endif %}
+  <figure>
+    <img src="{{ url_for('static', filename='generated/' ~ artwork) }}" alt="AI artwork">
+    <figcaption>AI artwork</figcaption>
+  </figure>
+</section>
+
+<section class="products">
+  <h2>Put it on something beautiful</h2>
+  <div class="product-grid">
+    {% for key, product in products.items() %}
+    <article class="product product-{{ key }}">
+      <div class="product-mockup product-mockup-{{ key }}">
+        <img src="{{ url_for('static', filename='generated/' ~ artwork) }}" alt="{{ product.name }} mockup">
+      </div>
+      <div class="product-meta">
+        <h3>{{ product.name }}</h3>
+        <p>{{ product.blurb }}</p>
+        <form method="POST" action="{{ url_for('select_product', product_key=key) }}">
+          {% if product.option_label and product.variants | length > 1 %}
+          <label for="variant-{{ key }}">{{ product.option_label }}</label>
+          <select id="variant-{{ key }}" name="variant_id" data-price-base="{{ product.variants[0].price_cents }}">
+            {% for v in product.variants %}
+            <option value="{{ v.id }}" data-price="{{ v.price_cents }}">${{ '%.0f' % (v.price_cents / 100) }} — {{ v.label }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+          <input type="hidden" name="variant_id" value="{{ product.variants[0].id }}">
+          {% endif %}
+          <div class="product-cta">
+            <span class="price" id="price-{{ key }}">${{ '%.2f' % (product.variants[0].price_cents / 100) }}</span>
+            <div class="cta-buttons">
+              <button type="submit" name="action" value="add">Add to cart</button>
+              <button type="submit" name="action" value="buy_now" class="secondary">Buy now →</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<script>
+  document.querySelectorAll('select[name="variant_id"]').forEach(function(sel) {
+    sel.addEventListener('change', function() {
+      var price = this.options[this.selectedIndex].dataset.price;
+      var priceEl = this.closest('article').querySelector('.price');
+      if (priceEl && price) {
+        priceEl.textContent = '$' + (parseInt(price) / 100).toFixed(2);
+      }
+    });
+  });
+</script>
+{% endblock %}

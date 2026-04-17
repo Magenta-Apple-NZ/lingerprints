@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Printify diagnostic — AI Photos{% endblock %}
+
+{% block content %}
+<section>
+  <h1>Printify diagnostic</h1>
+  <p class="lead">Read-only view of your shops + products. Use the IDs below to populate <code>PRODUCTS</code> in <code>app.py</code> during Phase 2.</p>
+
+  {% if not results %}
+    <p>No shops found on this Printify account.</p>
+  {% endif %}
+
+  {% for entry in results %}
+    <article>
+      <h2>Shop: {{ entry.shop.title }}</h2>
+      <p class="muted-note">
+        <strong>Shop ID:</strong> <code>{{ entry.shop.id }}</code> &nbsp;·&nbsp;
+        <strong>Sales channel:</strong> {{ entry.shop.sales_channel }}
+      </p>
+
+      {% if not entry.products %}
+        <p class="muted-note">No products in this shop yet.</p>
+      {% else %}
+        {% for product in entry.products %}
+          <details style="margin-bottom: 1rem;">
+            <summary>
+              <strong>{{ product.title }}</strong>
+              &nbsp;·&nbsp; product ID <code>{{ product.id }}</code>
+              &nbsp;·&nbsp; {{ product.variants|length }} variants
+            </summary>
+            <table style="margin-top: 0.5rem; font-size: 0.92rem;">
+              <thead>
+                <tr>
+                  <th>Variant ID</th>
+                  <th>Title</th>
+                  <th>Enabled?</th>
+                  <th>Price (cents)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for v in product.variants %}
+                  <tr>
+                    <td><code>{{ v.id }}</code></td>
+                    <td>{{ v.title }}</td>
+                    <td>{{ 'yes' if v.is_enabled else 'no' }}</td>
+                    <td>{{ v.price }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </details>
+        {% endfor %}
+      {% endif %}
+    </article>
+  {% endfor %}
+</section>
+{% endblock %}

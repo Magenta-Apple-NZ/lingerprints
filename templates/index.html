@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-copy">
+    <h1>Your photo. <em>Reimagined</em> as art.</h1>
+    <p class="lead">
+      Upload any photo. Our AI reworks it into a gallery-quality artwork in the
+      style you choose. Then we print and ship it anywhere in the US — canvas,
+      framed, mug, or tee.
+    </p>
+  </div>
+
+  <form class="upload-card" method="post" action="{{ url_for('generate') }}" enctype="multipart/form-data" id="upload-form">
+    <label for="photo">
+      <strong>1. Upload your photo</strong>
+      <input type="file" id="photo" name="photo" accept="image/png,image/jpeg" required>
+    </label>
+
+    <fieldset class="styles">
+      <legend><strong>2. Choose a style</strong></legend>
+      {% for key, style in styles.items() %}
+        <label class="style-chip">
+          <input type="radio" name="style" value="{{ key }}" {% if loop.first %}checked{% endif %}>
+          <span>{{ style.label }}</span>
+        </label>
+      {% endfor %}
+    </fieldset>
+
+    <button type="submit" id="submit-btn">
+      <span class="btn-label">3. Paint my artwork →</span>
+    </button>
+    <p class="muted-note">
+      Typically takes 15–30 seconds. We do not keep your original photo beyond this session.
+    </p>
+  </form>
+</section>
+
+<section class="how">
+  <h2>How it works</h2>
+  <ol class="steps">
+    <li><strong>Upload</strong> a favourite photo — family, pet, landscape, anything.</li>
+    <li><strong>Pick a style</strong> — from classic oil painting to vibrant pop art.</li>
+    <li><strong>Preview</strong> your artwork on canvas, framed prints, mugs and tees.</li>
+    <li><strong>Checkout</strong> — we print and ship it across the United States.</li>
+  </ol>
+</section>
+
+<script>
+  document.getElementById('upload-form').addEventListener('submit', function () {
+    var btn = document.getElementById('submit-btn');
+    btn.setAttribute('aria-busy', 'true');
+    btn.querySelector('.btn-label').textContent = 'Painting your artwork…';
+    btn.disabled = true;
+  });
+</script>
+{% endblock %}

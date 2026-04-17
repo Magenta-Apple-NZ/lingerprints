@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Order confirmed — AI Photos{% endblock %}
+
+{% block content %}
+<section class="success">
+  <div class="success-badge">✓</div>
+  <h1>Thanks — your artwork is on its way</h1>
+  <p class="lead">Order <strong>{{ order_id }}</strong> is confirmed. We'll email {{ customer_email or 'you' }} when it ships.</p>
+
+  {% if items %}
+  <section class="success-items">
+    <h3>What you ordered</h3>
+    <ul class="success-item-list">
+      {% for item in items %}
+      <li class="success-item">
+        <img src="{{ url_for('static', filename='generated/' ~ item.artwork) }}" alt="{{ item.product_name }}">
+        <div class="success-item-meta">
+          <strong>{{ item.product_name }}</strong>
+          <span class="muted-note">
+            {{ item.style_label }}
+            {% if item.option_label and item.variant_label %}
+              · {{ item.option_label }}: {{ item.variant_label }}
+            {% endif %}
+            · Qty {{ item.qty }}
+          </span>
+        </div>
+        <span class="line-total">${{ '%.2f' % (item.line_cents / 100) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    <div class="success-total">
+      <span>Total</span>
+      <strong>${{ '%.2f' % (total_cents / 100) }}</strong>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if address %}
+  <section class="success-address">
+    <h3>Shipping to</h3>
+    <p>
+      {{ address.line1 or '' }}{% if address.line2 %}, {{ address.line2 }}{% endif %}<br>
+      {{ address.city or '' }}{% if address.state %}, {{ address.state }}{% endif %} {{ address.postal_code or '' }}<br>
+      {{ address.country or '' }}
+    </p>
+  </section>
+  {% endif %}
+
+  <p class="muted-note">
+    {% if printify_ok %}
+      Your order has been sent to production. You'll receive a shipping confirmation by email once it dispatches.
+    {% else %}
+      Your payment is confirmed. We'll follow up by email with production and shipping details.
+    {% endif %}
+  </p>
+  <a href="{{ url_for('index') }}" role="button" class="secondary">Make another →</a>
+</section>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Your cart — AI Photos{% endblock %}
+
+{% block content %}
+<section class="cart-hero">
+  <h1>Your cart</h1>
+  {% if not is_empty %}
+  <p class="lead">Review your items, then check out when you're ready.</p>
+  {% endif %}
+</section>
+
+{% if is_empty %}
+<section class="cart-empty">
+  <p>Your cart is empty.</p>
+  <a href="{{ url_for('index') }}" role="button">Create an artwork →</a>
+</section>
+{% else %}
+<section class="cart-items">
+  {% for item in items %}
+  <article class="cart-item">
+    <div class="cart-item-thumb">
+      <img src="{{ url_for('static', filename='generated/' ~ item.artwork) }}" alt="{{ item.product_name }} preview">
+    </div>
+    <div class="cart-item-meta">
+      <h3>{{ item.product_name }}</h3>
+      <p class="muted-note">
+        {{ item.style_label }}
+        {% if item.option_label and item.variant_label %}
+          · {{ item.option_label }}: {{ item.variant_label }}
+        {% endif %}
+      </p>
+      <p class="unit-price">${{ '%.2f' % (item.unit_cents / 100) }} each</p>
+    </div>
+    <form method="POST" action="{{ url_for('cart_update_route', index=item.index) }}" class="cart-qty-form">
+      <label for="qty-{{ item.index }}">Qty</label>
+      <input
+        type="number"
+        id="qty-{{ item.index }}"
+        name="qty"
+        value="{{ item.qty }}"
+        min="1"
+        max="99"
+        inputmode="numeric"
+      >
+      <button type="submit" class="secondary">Update</button>
+    </form>
+    <div class="cart-item-total">
+      <span class="line-total">${{ '%.2f' % (item.line_cents / 100) }}</span>
+      <form method="POST" action="{{ url_for('cart_remove_route', index=item.index) }}">
+        <button type="submit" class="link-button" aria-label="Remove {{ item.product_name }}">Remove</button>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="cart-summary">
+  <div class="cart-total-row">
+    <span>Subtotal</span>
+    <strong>${{ '%.2f' % (total_cents / 100) }}</strong>
+  </div>
+  <p class="muted-note">Shipping calculated at checkout. Taxes where applicable.</p>
+  <div class="cart-actions">
+    <form method="POST" action="{{ url_for('cart_clear_route') }}" class="inline-form">
+      <button type="submit" class="secondary outline">Clear cart</button>
+    </form>
+    <a href="{{ url_for('index') }}" role="button" class="secondary">Keep creating</a>
+    <form method="POST" action="{{ url_for('checkout') }}" class="inline-form">
+      <button type="submit">Check out →</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

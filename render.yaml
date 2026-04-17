@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: ai-photos
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --timeout 120
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: PRINTIFY_API_KEY
+        sync: false
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: PYTHON_VERSION
+        value: 3.11.9
