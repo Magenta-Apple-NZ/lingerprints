@@ -25,10 +25,24 @@
   <h2>Put it on something beautiful</h2>
   <div class="product-grid">
     {% for key, product in products.items() %}
+    {% set mockup = product.mockup %}
     <article class="product product-{{ key }}">
+      {% if mockup and mockup.url %}
+      <div class="product-mockup product-mockup-real">
+        <img class="mockup-base" src="{{ mockup.url }}" alt="{{ product.name }} mockup">
+        <img class="mockup-art" src="{{ url_for('static', filename='generated/' ~ artwork) }}"
+             alt="Your artwork on {{ product.name }}"
+             style="top: {{ mockup.print_area.top }}%;
+                    left: {{ mockup.print_area.left }}%;
+                    width: {{ mockup.print_area.width }}%;
+                    height: {{ mockup.print_area.height }}%;
+                    mix-blend-mode: {{ mockup.blend or 'normal' }};">
+      </div>
+      {% else %}
       <div class="product-mockup product-mockup-{{ key }}">
         <img src="{{ url_for('static', filename='generated/' ~ artwork) }}" alt="{{ product.name }} mockup">
       </div>
+      {% endif %}
       <div class="product-meta">
         <h3>{{ product.name }}</h3>
         <p>{{ product.blurb }}</p>

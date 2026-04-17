@@ -201,6 +201,31 @@ h1 em { font-style: italic; color: var(--accent); }
 }
 .product-mockup img { max-width: 100%; max-height: 100%; display: block; }
 
+/* Real Printify mockup — artwork composited on actual product photo */
+.product-mockup-real {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  background: #f0ebe1;
+}
+.product-mockup-real .mockup-base {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  max-width: none;
+  max-height: none;
+}
+.product-mockup-real .mockup-art {
+  position: absolute;
+  object-fit: cover;
+  max-width: none;
+  max-height: none;
+  /* Subtle shadow keeps the overlay from looking like a pasted sticker */
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.15));
+  pointer-events: none;
+}
+
 /* Canvas — white wrap + deep shadow */
 .product-mockup-canvas {
   background: #efe9dc;
@@ -559,3 +584,75 @@ h1 em { font-style: italic; color: var(--accent); }
   text-align: left;
 }
 .success-address h3 { margin-bottom: 0.4rem; }
+
+/* ----- Admin mockup picker ----- */
+.mockup-block { margin: 2rem 0 3rem; }
+.mockup-block h2 { margin-top: 1rem; font-size: 1.3rem; }
+.mockup-block h2 small { font-size: 0.85rem; font-weight: 400; }
+.mockup-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.mockup-card {
+  margin: 0;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.mockup-card-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(212, 87, 42, 0.2);
+}
+.mockup-frame {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  background: #f5f1ea;
+}
+.mockup-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.mockup-overlay {
+  position: absolute;
+  outline: 2px dashed rgba(212, 87, 42, 0.9);
+  background: rgba(212, 87, 42, 0.12);
+  pointer-events: none;
+}
+.mockup-card figcaption {
+  padding: 0.55rem 0.7rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.mockup-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+}
+.tag {
+  background: var(--ink);
+  color: #fff;
+  padding: 0.05rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mockup-url {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fafaf7;
+  color: var(--muted);
+}

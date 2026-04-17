@@ -161,6 +161,22 @@ def pick_output_size(img: Image.Image) -> str:
 
 PRINTIFY_SHOP_ID = "27218866"
 
+# --------------------------------------------------------------------------
+# Product mockups
+#
+# `mockup.url` is a publicly fetchable Printify product-photo URL. Grab them
+# via the /admin/mockups?token=... diagnostic page once, paste here. Leave
+# blank to fall back to the CSS-only mockups.
+#
+# `mockup.print_area` defines where the user's artwork is composited on the
+# product photo, as percentages of the container. Tune these once per
+# mockup URL you pick. Starting values are reasonable for Printify's
+# default mockups but will need eyeball calibration.
+#
+# `mockup.blend` lets us apply `mix-blend-mode` so the artwork sits
+# convincingly on fabric / canvas texture.
+# --------------------------------------------------------------------------
+
 PRODUCTS = {
     "framed_canvas": {
         "name": 'Framed Canvas Print',
@@ -176,6 +192,11 @@ PRODUCTS = {
             {"id": 244029, "label": "Natural",   "price_cents": 9900},
             {"id": 107253, "label": "White",     "price_cents": 9900},
         ],
+        "mockup": {
+            "url": "",
+            "print_area": {"top": 22, "left": 32, "width": 36, "height": 50},
+            "blend": "normal",
+        },
     },
     "stretched_canvas": {
         "name": 'Stretched Canvas Print',
@@ -188,6 +209,11 @@ PRODUCTS = {
         "variants": [
             {"id": 91643, "label": '12×16"', "price_cents": 5900},
         ],
+        "mockup": {
+            "url": "",
+            "print_area": {"top": 18, "left": 27, "width": 46, "height": 60},
+            "blend": "multiply",
+        },
     },
     "poster": {
         "name": 'Rolled Poster',
@@ -201,6 +227,11 @@ PRODUCTS = {
             {"id": 101883, "label": "Matte",       "price_cents": 3500},
             {"id": 101832, "label": "Semi Glossy", "price_cents": 3500},
         ],
+        "mockup": {
+            "url": "",
+            "print_area": {"top": 10, "left": 18, "width": 35, "height": 72},
+            "blend": "normal",
+        },
     },
     "tee": {
         "name": 'Unisex T-Shirt',
@@ -218,6 +249,11 @@ PRODUCTS = {
             {"id": 18544, "label": "2XL", "price_cents": 4500},
             {"id": 18545, "label": "3XL", "price_cents": 4900},
         ],
+        "mockup": {
+            "url": "",
+            "print_area": {"top": 26, "left": 36, "width": 28, "height": 32},
+            "blend": "multiply",
+        },
     },
 }
 
@@ -956,6 +992,53 @@ def admin_printify():
         return f"Printify API error: {exc}", 502
 
     return render_template("admin_printify.html", results=results)
+
+
+@app.route("/admin/mockups")
+def admin_mockups():
+    """
+    Diagnostic page: for each product in PRODUCTS, fetch its Printify record
+    and display every mockup image URL Printify has for it. Pick the one
+    you like, paste it into PRODUCTS[<key>]['mockup']['url'] in app.py.
+
+    Also shows a live preview of the print_area overlay using the
+    currently-configured print_area values — so you can tune them by eye.
+    """
+    admin_token = os.environ.get("ADMIN_TOKEN")
+    if not admin_token or request.args.get("token") != admin_token:
+        abort(404)
+
+    api_key = os.environ.get("PRINTIFY_API_KEY")
+    if not api_key:
+        return "PRINTIFY_API_KEY is not set.", 500
+
+    headers = {"Authorization": f"Bearer {api_key}"}
+    results = []
+    for key, product in PRODUCTS.items():
+        entry = {
+            "key": key,
+            "name": product["name"],
+            "configured_mockup": product.get("mockup", {}).get("url") or "",
+            "print_area": product.get("mockup", {}).get("print_area") or {},
+            "images": [],
+            "error": None,
+        }
+        try:
+            resp = requests.get(
+                f"https://api.printify.com/v1/shops/{PRINTIFY_SHOP_ID}/products/"
+                f"{product['printify_product_id']}.json",
+                headers=headers,
+                timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            # Each image entry has 'src', 'position', 'variant_ids', 'is_default'.
+            entry["images"] = data.get("images", [])
+        except Exception as exc:
+            entry["error"] = str(exc)
+        results.append(entry)
+
+    return render_template("admin_mockups.html", results=results)
 
 
 @app.route("/healthz")

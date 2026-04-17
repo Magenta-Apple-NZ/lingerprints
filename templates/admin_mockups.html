@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Mockup picker — Admin{% endblock %}
+
+{% block content %}
+<section>
+  <h1>Printify mockups</h1>
+  <p class="lead">
+    For each product, Printify provides multiple mockup photos. Pick one, copy its
+    URL, and paste it into <code>PRODUCTS[&lt;key&gt;]['mockup']['url']</code> in
+    <code>app.py</code>. Each mockup preview shows the current
+    <code>print_area</code> overlay in red so you can tune coordinates by eye.
+  </p>
+</section>
+
+{% for entry in results %}
+<section class="mockup-block">
+  <h2>{{ entry.name }} <small class="muted-note">({{ entry.key }})</small></h2>
+  {% if entry.error %}
+    <p class="flash">Error fetching Printify data: {{ entry.error }}</p>
+  {% elif not entry.images %}
+    <p class="muted-note">No mockup images returned for this product.</p>
+  {% else %}
+  <div class="mockup-grid">
+    {% for img in entry.images %}
+    <figure class="mockup-card {% if entry.configured_mockup == img.src %}mockup-card-active{% endif %}">
+      <div class="mockup-frame">
+        <img src="{{ img.src }}" alt="Mockup {{ loop.index }}">
+        <div class="mockup-overlay" style="
+          top: {{ entry.print_area.top or 0 }}%;
+          left: {{ entry.print_area.left or 0 }}%;
+          width: {{ entry.print_area.width or 0 }}%;
+          height: {{ entry.print_area.height or 0 }}%;
+        "></div>
+      </div>
+      <figcaption>
+        <div class="mockup-meta">
+          <span class="muted-note">pos: {{ img.position or 'n/a' }}</span>
+          {% if img.is_default %}<span class="tag">default</span>{% endif %}
+        </div>
+        <input type="text" readonly value="{{ img.src }}" onclick="this.select();" class="mockup-url">
+      </figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+  <p class="muted-note">
+    Current <code>print_area</code>:
+    top {{ entry.print_area.top or 0 }}%,
+    left {{ entry.print_area.left or 0 }}%,
+    width {{ entry.print_area.width or 0 }}%,
+    height {{ entry.print_area.height or 0 }}%
+  </p>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}
