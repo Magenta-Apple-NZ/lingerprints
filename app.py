@@ -11,6 +11,7 @@ Flow:
 from __future__ import annotations
 
 import base64
+import gc
 import io
 import json
 import logging
@@ -35,7 +36,6 @@ from flask import (
 )
 from openai import OpenAI
 from PIL import Image, ImageOps
-from rembg import remove as rembg_remove
 
 load_dotenv()
 
@@ -643,21 +643,10 @@ def generate():
         flash("That file doesn't look like an image we can read. Try JPG or PNG.")
         return redirect(url_for("index"))
 
-    # Downsize long side to 1536 max — aligns with gpt-image-1's output sizes
-    # and keeps uploads small. Aspect ratio is preserved.
-    img.thumbnail((1536, 1536))
-
-    # Remove background and composite subject onto a clean white canvas.
-    # This helps gpt-image-1 focus on the subject rather than cluttered
-    # backgrounds, and gives the style transfer a cleaner base to work from.
-    try:
-        fg = rembg_remove(img)          # RGBA with transparent background
-        white = Image.new("RGBA", fg.size, (255, 255, 255, 255))
-        white.paste(fg, mask=fg.split()[3])
-        img = white
-    except Exception:
-        app.logger.warning("Background removal failed — continuing with original.")
-        # Non-fatal: just use the original image.
+    # Downsize long side to 1024 max — aligns with gpt-image-1's smallest
+    # output size and keeps memory well under Render's 512MB ceiling.
+    # Aspect ratio is preserved.
+    img.thumbnail((1024, 1024))
 
     # Save the original so the result page can show before/after.
     original_filename = f"orig_{uuid.uuid4().hex}.png"
@@ -702,6 +691,12 @@ def generate():
 
     artwork_filename = f"art_{uuid.uuid4().hex}.png"
     (GENERATED_DIR / artwork_filename).write_bytes(image_bytes)
+
+    # Free the large transient buffers before returning. Render's 512MB
+    # ceiling is tight enough that we don't want to wait for Python's GC
+    # to decide it's time.
+    del png_bytes, buf, img, image_bytes, result
+    gc.collect()
 
     session["artwork"] = artwork_filename
     session["original"] = original_filename

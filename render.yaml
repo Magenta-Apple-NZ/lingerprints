@@ -5,8 +5,11 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     # One gunicorn worker so the in-process lock around orders.json is
-    # actually sufficient. If we scale out, switch to SQLite or Postgres.
-    startCommand: gunicorn app:app --workers 1 --timeout 120
+    # actually sufficient. Threads handle concurrency within the worker.
+    # --max-requests recycles the worker periodically so any leaked memory
+    # from image processing is reclaimed. If we scale out, switch to
+    # SQLite or Postgres for the order register.
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 120 --max-requests 50 --max-requests-jitter 10
     envVars:
       - key: OPENAI_API_KEY
         sync: false
