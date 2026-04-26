@@ -78,20 +78,29 @@
     {% endif %}
 
     <fieldset class="styles">
-      <legend><strong>2. How should we paint them?</strong></legend>
-      <div class="style-carousel">
+      <div class="styles-legend-row">
+        <legend><strong>2. How should we paint them?</strong></legend>
+        <div class="pet-type-toggle" role="group" aria-label="Preview pet type">
+          <button type="button" class="pet-type-btn active" data-type="dog">🐶 Dog</button>
+          <button type="button" class="pet-type-btn" data-type="cat">🐱 Cat</button>
+        </div>
+      </div>
+      <div class="style-carousel" id="style-carousel">
         {% for key, style in styles.items() %}
-        <label class="style-card">
+        <label class="style-card" data-style-key="{{ key }}">
           <input type="radio" name="style" value="{{ key }}" {% if loop.first %}checked{% endif %}>
           <div class="style-card-image">
-            <img src="{{ url_for('static', filename='examples/' ~ key ~ '.png') }}"
+            <img class="style-example-img"
+                 src="{{ url_for('static', filename='examples/' ~ key ~ '.png') }}"
+                 data-dog="{{ url_for('static', filename='examples/' ~ key ~ '.png') }}"
+                 data-cat="{{ url_for('static', filename='examples/' ~ key ~ '_cat.png') }}"
                  alt="{{ style.label }} — {{ style.example_breed }}"
                  onerror="this.closest('.style-card-image').classList.add('no-img')">
             <div class="style-card-placeholder" aria-hidden="true">{{ style.label[0] }}</div>
           </div>
           <div class="style-card-label">
             <strong>{{ style.label }}</strong>
-            <span class="style-breed">{{ style.example_breed }}</span>
+            <span class="style-breed" data-dog="{{ style.example_breed }}" data-cat="{{ style.example_breed_cat or style.example_breed }}">{{ style.example_breed }}</span>
           </div>
         </label>
         {% endfor %}
@@ -116,9 +125,12 @@
   <h2>Printed on things you'll love forever</h2>
   <p class="lead">Every portrait looks stunning across our full range of products.</p>
   <div class="showcase-grid">
+
     <div class="showcase-card showcase-canvas">
       <div class="showcase-image">
-        <div class="showcase-icon">🖼️</div>
+        <div class="showcase-mockup-canvas">
+          <img src="{{ url_for('static', filename='examples/oil.png') }}" alt="Canvas print example" onerror="this.parentElement.innerHTML='🖼️'">
+        </div>
       </div>
       <div class="showcase-meta">
         <strong>Canvas Print</strong>
@@ -126,9 +138,15 @@
         <em>from $59</em>
       </div>
     </div>
+
     <div class="showcase-card showcase-mug">
       <div class="showcase-image">
-        <div class="showcase-icon">☕</div>
+        <div class="showcase-mockup-mug">
+          <div class="mug-body">
+            <img src="{{ url_for('static', filename='examples/watercolour.png') }}" alt="Mug example" onerror="this.parentElement.innerHTML='☕'">
+          </div>
+          <div class="mug-handle"></div>
+        </div>
       </div>
       <div class="showcase-meta">
         <strong>Ceramic Mug</strong>
@@ -136,9 +154,14 @@
         <em>from $18</em>
       </div>
     </div>
+
     <div class="showcase-card showcase-tee">
       <div class="showcase-image">
-        <div class="showcase-icon">👕</div>
+        <div class="showcase-mockup-tee">
+          <div class="tee-shape">
+            <img src="{{ url_for('static', filename='examples/ghibli.png') }}" alt="Tee example" onerror="this.parentElement.innerHTML='👕'">
+          </div>
+        </div>
       </div>
       <div class="showcase-meta">
         <strong>Unisex Tee</strong>
@@ -146,9 +169,15 @@
         <em>from $39</em>
       </div>
     </div>
+
     <div class="showcase-card showcase-notebook">
       <div class="showcase-image">
-        <div class="showcase-icon">📓</div>
+        <div class="showcase-mockup-notebook">
+          <div class="notebook-cover">
+            <img src="{{ url_for('static', filename='examples/line.png') }}" alt="Notebook example" onerror="this.parentElement.innerHTML='📓'">
+          </div>
+          <div class="notebook-spine"></div>
+        </div>
       </div>
       <div class="showcase-meta">
         <strong>Notebook</strong>
@@ -156,6 +185,7 @@
         <em>from $24</em>
       </div>
     </div>
+
   </div>
 </section>
 
@@ -204,12 +234,33 @@
     });
   }
 
+  // Style card selection
   document.querySelectorAll('.style-card input[type="radio"]').forEach(function(radio) {
     radio.addEventListener('change', function() {
       document.querySelectorAll('.style-card').forEach(function(c) { c.classList.remove('selected'); });
       this.closest('.style-card').classList.add('selected');
     });
     if (radio.checked) radio.closest('.style-card').classList.add('selected');
+  });
+
+  // Dog / cat toggle
+  document.querySelectorAll('.pet-type-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var type = this.dataset.type;
+      document.querySelectorAll('.pet-type-btn').forEach(function(b) { b.classList.remove('active'); });
+      this.classList.add('active');
+
+      document.querySelectorAll('.style-example-img').forEach(function(img) {
+        var newSrc = img.dataset[type];
+        if (newSrc) {
+          img.src = newSrc;
+          img.closest('.style-card-image').classList.remove('no-img');
+        }
+      });
+      document.querySelectorAll('.style-breed').forEach(function(el) {
+        el.textContent = el.dataset[type] || el.dataset.dog;
+      });
+    });
   });
 </script>
 {% endblock %}

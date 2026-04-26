@@ -75,6 +75,7 @@ STYLES = {
     "oil": {
         "label": "Oil Painting",
         "example_breed": "German Shepherd",
+        "example_breed_cat": "Maine Coon",
         "preamble": (
             "Study the breed, markings, and character of the animal in this photograph. "
             "Create a formal regal portrait in the tradition of 17th-century Dutch oil painting. "
@@ -87,6 +88,7 @@ STYLES = {
     "watercolour": {
         "label": "Watercolour",
         "example_breed": "Golden Retriever",
+        "example_breed_cat": "Ragdoll",
         "preamble": (
             "Identify the key features and mood of the subject in this photograph. "
             "Reimagine them as a loose, luminous watercolour illustration — "
@@ -99,6 +101,7 @@ STYLES = {
     "van_gogh": {
         "label": "Van Gogh",
         "example_breed": "French Bulldog",
+        "example_breed_cat": "Bengal",
         "preamble": (
             "Use the subject of this photograph as inspiration. "
             "Reimagine them as a Van Gogh post-impressionist painting: "
@@ -111,6 +114,7 @@ STYLES = {
     "ghibli": {
         "label": "Ghibli Anime",
         "example_breed": "Labrador",
+        "example_breed_cat": "Scottish Fold",
         "preamble": (
             "Use the subject of this photograph as inspiration. "
             "Reimagine them as a character in a Studio Ghibli film — "
@@ -123,6 +127,7 @@ STYLES = {
     "line": {
         "label": "Line Art",
         "example_breed": "Pitbull",
+        "example_breed_cat": "Siamese",
         "preamble": (
             "Study the face and most distinctive features of the subject in this photograph. "
             "Create a front-facing minimal continuous line drawing — "
@@ -1340,6 +1345,21 @@ def download_artwork(artwork: str):
 @app.route("/healthz")
 def healthz():
     return "ok", 200
+
+
+@app.route("/faq")
+def faq():
+    return render_template("faq.html")
+
+
+@app.route("/terms")
+def terms():
+    return render_template("terms.html")
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
 
 
 if __name__ == "__main__":
