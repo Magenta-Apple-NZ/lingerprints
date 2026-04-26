@@ -79,7 +79,7 @@
 
     <fieldset class="styles">
       <legend><strong>2. How should we paint them?</strong></legend>
-      <div class="style-grid">
+      <div class="style-carousel">
         {% for key, style in styles.items() %}
         <label class="style-card">
           <input type="radio" name="style" value="{{ key }}" {% if loop.first %}checked{% endif %}>
