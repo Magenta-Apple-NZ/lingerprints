@@ -89,7 +89,7 @@ h1 em { font-style: italic; color: var(--accent); }
   align-items: start;
 }
 @media (min-width: 900px) {
-  .hero { grid-template-columns: 1.1fr 1fr; gap: 4rem; }
+  .hero { grid-template-columns: 7fr 3fr; gap: 4rem; }
 }
 
 .hero-copy h1 { margin-bottom: 1rem; }
@@ -385,9 +385,10 @@ h1 em { font-style: italic; color: var(--accent); }
   flex-wrap: wrap;
   gap: 0.4rem;
 }
-.restyle-chip {
+.restyle-chips .restyle-chip {
   display: inline-block;
-  width: auto;
+  width: auto !important;
+  flex: 0 0 auto;
   padding: 0.35rem 0.85rem;
   border: 1.5px solid var(--line);
   border-radius: 999px;
@@ -396,9 +397,10 @@ h1 em { font-style: italic; color: var(--accent); }
   cursor: pointer;
   transition: all 0.12s;
   margin: 0;
+  color: var(--ink);
 }
-.restyle-chip:hover { border-color: #aaa; }
-.restyle-chip.active {
+.restyle-chips .restyle-chip:hover { border-color: #aaa; }
+.restyle-chips .restyle-chip.active {
   background: var(--ink);
   color: white;
   border-color: var(--ink);
