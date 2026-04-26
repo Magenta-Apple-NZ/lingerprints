@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}My Pets — Linger Prints{% endblock %}
+
+{% block content %}
+<section class="pets-hero">
+  <h1>My Pets</h1>
+  <p class="lead">Save your furbabies here so you can paint them any time — no re-uploading needed.</p>
+</section>
+
+<section class="pets-add-form">
+  <h2>Add a pet</h2>
+  <form method="post" action="{{ url_for('pets_add') }}" enctype="multipart/form-data" class="add-pet-card">
+    <div class="add-pet-fields">
+      <label for="pet-name">
+        <strong>Pet's name</strong>
+        <input type="text" id="pet-name" name="name" placeholder="e.g. Buddy" maxlength="40" required>
+      </label>
+      <label for="pet-photo">
+        <strong>Photo</strong>
+        <input type="file" id="pet-photo" name="photo" accept="image/png,image/jpeg" required>
+      </label>
+    </div>
+    <button type="submit">Save this pet →</button>
+  </form>
+</section>
+
+{% if pets %}
+<section class="pets-list">
+  <h2>Your saved pets</h2>
+  <div class="pets-grid">
+    {% for pet in pets %}
+    <article class="pet-card">
+      <div class="pet-card-image">
+        <img src="{{ url_for('static', filename='generated/' ~ pet.filename) }}" alt="{{ pet.name }}">
+      </div>
+      <div class="pet-card-meta">
+        <strong>{{ pet.name }}</strong>
+        <div class="pet-card-actions">
+          <a href="{{ url_for('index') }}?pet_id={{ pet.id }}" class="paint-link">Paint them →</a>
+          <form method="post" action="{{ url_for('pets_remove', pet_id=pet.id) }}" class="inline-form">
+            <button type="submit" class="link-button remove-pet">Remove</button>
+          </form>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% else %}
+<section class="pets-empty">
+  <p class="muted-note">You haven't saved any pets yet. Add one above and they'll be waiting for you every time you visit.</p>
+</section>
+{% endif %}
+{% endblock %}

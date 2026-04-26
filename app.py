@@ -31,11 +31,12 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     session,
     url_for,
 )
 from openai import OpenAI
-from PIL import Image, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 load_dotenv()
 
@@ -73,6 +74,7 @@ NEGATIVE_CONSTRAINTS = (
 STYLES = {
     "oil": {
         "label": "Oil Painting",
+        "example_breed": "German Shepherd",
         "preamble": (
             "Study the breed, markings, and character of the animal in this photograph. "
             "Create a formal regal portrait in the tradition of 17th-century Dutch oil painting. "
@@ -84,6 +86,7 @@ STYLES = {
     },
     "watercolour": {
         "label": "Watercolour",
+        "example_breed": "Golden Retriever",
         "preamble": (
             "Identify the key features and mood of the subject in this photograph. "
             "Reimagine them as a loose, luminous watercolour illustration — "
@@ -95,6 +98,7 @@ STYLES = {
     },
     "van_gogh": {
         "label": "Van Gogh",
+        "example_breed": "French Bulldog",
         "preamble": (
             "Use the subject of this photograph as inspiration. "
             "Reimagine them as a Van Gogh post-impressionist painting: "
@@ -106,6 +110,7 @@ STYLES = {
     },
     "ghibli": {
         "label": "Ghibli Anime",
+        "example_breed": "Labrador",
         "preamble": (
             "Use the subject of this photograph as inspiration. "
             "Reimagine them as a character in a Studio Ghibli film — "
@@ -115,19 +120,9 @@ STYLES = {
             "The tone should feel warm, cinematic, and full of quiet wonder."
         ),
     },
-    "pop": {
-        "label": "Pop Art",
-        "preamble": (
-            "Use the face and key features of the subject in this photograph. "
-            "Create an extreme Andy Warhol-style silkscreen pop art piece: "
-            "a 2x2 grid of the same portrait, each panel in a radically different flat colour palette — "
-            "hot pink, electric blue, acid yellow, lime green. "
-            "Bold black outlines, coarse halftone dot texture, zero shading. "
-            "Pure graphic impact. Think the Marilyn Monroe series but with this subject."
-        ),
-    },
     "line": {
         "label": "Line Art",
+        "example_breed": "Pitbull",
         "preamble": (
             "Study the face and most distinctive features of the subject in this photograph. "
             "Create a front-facing minimal continuous line drawing — "
@@ -178,6 +173,21 @@ PRINTIFY_SHOP_ID = "27218866"
 # --------------------------------------------------------------------------
 
 PRODUCTS = {
+    "digital_download": {
+        "name": "Digital Download",
+        "blurb": "Your furbaby's portrait as a PNG, delivered instantly. Share it, print it yourself, or keep it forever.",
+        "digital": True,
+        "blueprint_id": None,
+        "print_provider_id": None,
+        "printify_product_id": None,
+        "print_position": None,
+        "option_label": "Resolution",
+        "variants": [
+            {"id": 1, "label": "Standard (share & small prints)", "price_cents": 99},
+            {"id": 2, "label": "Print-Ready (large canvas & frames)", "price_cents": 999},
+        ],
+        "mockup": {"url": "https://images.printify.com/mockup/69e1f53cf03babfb2f075654/111817/107084/matte-canvas-framed-multi-color.jpg?camera_label=front", "print_area": {}, "blend": "normal"},
+    },
     "framed_canvas": {
         "name": 'Framed Canvas Print',
         "blurb": '12×16" gallery-wrapped canvas in a premium frame.',
@@ -210,7 +220,7 @@ PRODUCTS = {
             {"id": 91643, "label": '12×16"', "price_cents": 5900},
         ],
         "mockup": {
-            "url": "",
+            "url": "https://images.printify.com/mockup/69e1f4942ed6a28c54063562/101412/95789/matte-canvas-stretched-125.jpg?camera_label=front",
             "print_area": {"top": 18, "left": 27, "width": 46, "height": 60},
             "blend": "multiply",
         },
@@ -228,7 +238,7 @@ PRODUCTS = {
             {"id": 101832, "label": "Semi Glossy", "price_cents": 3500},
         ],
         "mockup": {
-            "url": "",
+            "url": "https://images.printify.com/mockup/69e1f462596268421f0a48b9/92393/97404/rolled-posters.jpg?camera_label=front",
             "print_area": {"top": 10, "left": 18, "width": 35, "height": 72},
             "blend": "normal",
         },
@@ -250,7 +260,7 @@ PRODUCTS = {
             {"id": 18545, "label": "3XL", "price_cents": 4900},
         ],
         "mockup": {
-            "url": "",
+            "url": "https://images.printify.com/mockup/69e1f427820f4311710d16ba/18542/102044/unisex-jersey-short-sleeve-tee.jpg?camera_label=front-2",
             "print_area": {"top": 26, "left": 36, "width": 28, "height": 32},
             "blend": "multiply",
         },
@@ -410,6 +420,7 @@ def cart_items_decorated(cart: list[dict]) -> list[dict]:
             "style_label": style["label"],
             "unit_cents": unit_cents,
             "line_cents": unit_cents * qty,
+            "is_digital": product.get("digital", False),
         })
     return out
 
@@ -546,9 +557,20 @@ def fulfil_checkout(checkout_session) -> tuple[bool, str]:
 
     items = cart_items_decorated(cart)
 
-    # Dedupe artwork uploads across the cart.
+    physical_items = [it for it in items if not it["is_digital"]]
+    digital_items = [it for it in items if it["is_digital"]]
+
+    # All-digital order — nothing to send to Printify.
+    if not physical_items:
+        mark_order_submitted(session_id, "digital-only")
+        app.logger.info(
+            "Digital-only order: sid=%s lines=%s", session_id, len(digital_items)
+        )
+        return True, "digital-only"
+
+    # Dedupe artwork uploads for physical items only.
     artwork_urls: dict[str, str] = {}
-    for item in items:
+    for item in physical_items:
         artwork = item["artwork"]
         if artwork in artwork_urls:
             continue
@@ -559,7 +581,7 @@ def fulfil_checkout(checkout_session) -> tuple[bool, str]:
             artwork_urls[artwork] = ""
 
     printify_line_items = []
-    for item in items:
+    for item in physical_items:
         image_url = artwork_urls.get(item["artwork"])
         if not image_url:
             continue
@@ -617,30 +639,127 @@ def fulfil_checkout(checkout_session) -> tuple[bool, str]:
 # --------------------------------------------------------------------------
 
 
+# --------------------------------------------------------------------------
+# Pets helpers
+# --------------------------------------------------------------------------
+
+MAX_PETS = 10
+
+
+def pets_get() -> list[dict]:
+    return list(session.get("pets", []))
+
+
+def pets_save(pets: list[dict]) -> None:
+    session["pets"] = pets
+    session.modified = True
+
+
+def pet_find(pet_id: str) -> dict | None:
+    return next((p for p in pets_get() if p["id"] == pet_id), None)
+
+
 @app.route("/")
 def index():
-    return render_template("index.html", styles=STYLES)
+    original = session.get("original")
+    has_previous = bool(original and (GENERATED_DIR / original).exists())
+    pets = pets_get()
+    return render_template(
+        "index.html",
+        styles=STYLES,
+        has_previous=has_previous,
+        previous_original=original if has_previous else None,
+        pets=pets,
+    )
 
 
-@app.route("/generate", methods=["POST"])
-def generate():
+@app.route("/pets")
+def pets_page():
+    return render_template("pets.html", pets=pets_get())
+
+
+@app.route("/pets/add", methods=["POST"])
+def pets_add():
+    name = request.form.get("name", "").strip() or "My Pet"
     file = request.files.get("photo")
-    style_key = request.form.get("style", "oil")
-
     if not file or not file.filename:
-        flash("Please choose a photo first.")
-        return redirect(url_for("index"))
-
-    if style_key not in STYLES:
-        style_key = "oil"
+        flash("Please choose a photo to upload.")
+        return redirect(url_for("pets_page"))
 
     try:
         img = Image.open(file.stream)
-        # Honour EXIF orientation before any other processing.
         img = ImageOps.exif_transpose(img)
         img = img.convert("RGBA")
     except Exception:
         flash("That file doesn't look like an image we can read. Try JPG or PNG.")
+        return redirect(url_for("pets_page"))
+
+    img.thumbnail((1024, 1024))
+    filename = f"pet_{uuid.uuid4().hex}.png"
+    img.save(GENERATED_DIR / filename, format="PNG")
+
+    current = pets_get()
+    if len(current) >= MAX_PETS:
+        flash(f"You can save up to {MAX_PETS} pets. Remove one to add another.")
+        return redirect(url_for("pets_page"))
+
+    current.append({"id": uuid.uuid4().hex, "name": name, "filename": filename})
+    pets_save(current)
+    flash(f"{name} added to your pets!")
+    return redirect(url_for("pets_page"))
+
+
+@app.route("/pets/remove/<pet_id>", methods=["POST"])
+def pets_remove(pet_id: str):
+    current = pets_get()
+    pet = next((p for p in current if p["id"] == pet_id), None)
+    if pet:
+        try:
+            (GENERATED_DIR / pet["filename"]).unlink(missing_ok=True)
+        except Exception:
+            pass
+        pets_save([p for p in current if p["id"] != pet_id])
+    return redirect(url_for("pets_page"))
+
+
+def _load_image_for_generation(pet_id: str | None, file) -> tuple[Image.Image | None, str]:
+    """
+    Return (img, error_message). Loads from a saved pet if pet_id given,
+    otherwise from the uploaded file.
+    """
+    if pet_id:
+        pet = pet_find(pet_id)
+        if not pet:
+            return None, "That pet wasn't found. Please select another."
+        path = GENERATED_DIR / pet["filename"]
+        if not path.exists():
+            return None, "That pet's photo has expired. Please re-upload them."
+        try:
+            img = Image.open(path).convert("RGBA")
+            return img, ""
+        except Exception:
+            return None, "Couldn't read that pet's photo. Please re-upload."
+
+    if not file or not file.filename:
+        return None, "Please select a pet or upload a photo first."
+    try:
+        img = Image.open(file.stream)
+        img = ImageOps.exif_transpose(img)
+        return img.convert("RGBA"), ""
+    except Exception:
+        return None, "That file doesn't look like an image we can read. Try JPG or PNG."
+
+
+@app.route("/generate", methods=["POST"])
+def generate():
+    pet_id = request.form.get("pet_id", "").strip() or None
+    style_key = request.form.get("style", "oil")
+    if style_key not in STYLES:
+        style_key = "oil"
+
+    img, err = _load_image_for_generation(pet_id, request.files.get("photo"))
+    if img is None:
+        flash(err)
         return redirect(url_for("index"))
 
     # Downsize long side to 1024 max — aligns with gpt-image-1's smallest
@@ -649,8 +768,12 @@ def generate():
     img.thumbnail((1024, 1024))
 
     # Save the original so the result page can show before/after.
-    original_filename = f"orig_{uuid.uuid4().hex}.png"
-    img.save(GENERATED_DIR / original_filename, format="PNG")
+    # If painting from a saved pet, re-use their file as the "original".
+    if pet_id:
+        original_filename = pet_find(pet_id)["filename"]
+    else:
+        original_filename = f"orig_{uuid.uuid4().hex}.png"
+        img.save(GENERATED_DIR / original_filename, format="PNG")
 
     # Encode to PNG bytes — pass as (filename, bytes, mime) tuple, which is the
     # most reliable shape for the OpenAI SDK's multipart upload.
@@ -704,6 +827,75 @@ def generate():
     return redirect(url_for("result"))
 
 
+@app.route("/regenerate", methods=["POST"])
+def regenerate():
+    """Re-run generation on the stored original with a different style."""
+    style_key = request.form.get("style", "oil")
+    if style_key not in STYLES:
+        style_key = "oil"
+
+    original = session.get("original")
+    if not original:
+        flash("No photo in session — please upload one.")
+        return redirect(url_for("index"))
+
+    original_path = GENERATED_DIR / original
+    if not original_path.exists():
+        flash("Your previous photo has expired. Please upload again.")
+        return redirect(url_for("index"))
+
+    try:
+        img = Image.open(original_path)
+    except Exception:
+        flash("Couldn't re-read your photo. Please upload again.")
+        return redirect(url_for("index"))
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+
+    prompt = build_prompt(style_key)
+    output_size = pick_output_size(img)
+
+    app.logger.info(
+        "REGENERATE style=%s input_size=%sx%s output_size=%s prompt_len=%s",
+        style_key, img.size[0], img.size[1], output_size, len(prompt),
+    )
+
+    try:
+        client = _openai_client()
+        result_obj = client.images.edit(
+            model="gpt-image-1",
+            image=("input.png", png_bytes, "image/png"),
+            prompt=prompt,
+            size=output_size,
+            n=1,
+            input_fidelity="high",
+            quality="medium",
+        )
+        b64 = result_obj.data[0].b64_json
+        if not b64:
+            raise RuntimeError("OpenAI returned no image data.")
+        image_bytes = base64.b64decode(b64)
+    except Exception as exc:
+        app.logger.exception("OpenAI regeneration failed")
+        flash(
+            "Our AI artist couldn't paint that one. "
+            f"({exc.__class__.__name__}: {exc})"
+        )
+        return redirect(url_for("result"))
+
+    artwork_filename = f"art_{uuid.uuid4().hex}.png"
+    (GENERATED_DIR / artwork_filename).write_bytes(image_bytes)
+
+    del png_bytes, buf, image_bytes, result_obj
+    gc.collect()
+
+    session["artwork"] = artwork_filename
+    session["style"] = style_key
+    return redirect(url_for("result"))
+
+
 @app.route("/result")
 def result():
     artwork = session.get("artwork")
@@ -717,6 +909,8 @@ def result():
         artwork=artwork,
         original=original,
         style=STYLES.get(style_key, {"label": "Custom"}),
+        style_key=style_key,
+        styles=STYLES,
         products=PRODUCTS,
     )
 
@@ -794,7 +988,7 @@ def checkout():
     # Build Stripe line_items from the cart.
     line_items = []
     for item in items:
-        name = f"AI Artwork — {item['product_name']}"
+        name = f"Linger Prints — {item['product_name']}"
         if item["option_label"] and item["variant_label"]:
             name += f" ({item['variant_label']})"
         line_items.append({
@@ -809,12 +1003,15 @@ def checkout():
             "quantity": item["qty"],
         })
 
+    has_physical = any(
+        not PRODUCTS.get(item["product_key"], {}).get("digital") for item in cart
+    )
+
     try:
         _ensure_stripe()
-        checkout_session = stripe.checkout.Session.create(
+        create_kwargs: dict = dict(
             mode="payment",
             line_items=line_items,
-            shipping_address_collection={"allowed_countries": ["US", "NZ", "AU", "GB", "CA"]},
             metadata={
                 # Lightweight marker only — full cart is stashed in the Flask
                 # session under 'pending' keyed by the Stripe session id so the
@@ -824,6 +1021,11 @@ def checkout():
             success_url=url_for("success", _external=True) + "?session_id={CHECKOUT_SESSION_ID}",
             cancel_url=url_for("cart_view", _external=True),
         )
+        if has_physical:
+            create_kwargs["shipping_address_collection"] = {
+                "allowed_countries": ["US", "NZ", "AU", "GB", "CA"]
+            }
+        checkout_session = stripe.checkout.Session.create(**create_kwargs)
     except Exception as exc:
         app.logger.exception("Stripe checkout create failed")
         flash(f"Checkout unavailable right now. ({exc.__class__.__name__})")
@@ -877,7 +1079,13 @@ def success():
 
     fulfilment_status = order_record.get("status", "unknown")
     printify_order_id = order_record.get("printify_order_id")
-    display_order_id = printify_order_id or f"AIP-{session_id[-8:].upper()}"
+    display_order_id = (
+        printify_order_id
+        if printify_order_id and printify_order_id != "digital-only"
+        else f"AIP-{session_id[-8:].upper()}"
+    )
+    has_digital = any(item.get("is_digital") for item in items)
+    has_physical = any(not item.get("is_digital") for item in items)
 
     # Clear the user's cart now that the payment is confirmed. Guarded on
     # the session id so a user who lands on someone else's /success link
@@ -895,6 +1103,8 @@ def success():
         address=shipping_address,
         printify_ok=(fulfilment_status == "submitted"),
         fulfilment_status=fulfilment_status,
+        has_digital=has_digital,
+        has_physical=has_physical,
     )
 
 
@@ -1034,6 +1244,84 @@ def admin_mockups():
         results.append(entry)
 
     return render_template("admin_mockups.html", results=results)
+
+
+def _watermarked_preview(img: Image.Image) -> io.BytesIO:
+    """Return a JPEG BytesIO with a diagonal Linger Prints watermark tiled across the image."""
+    img = img.convert("RGBA")
+    w, h = img.size
+
+    # Build watermark on a square canvas large enough to survive 45° rotation without clipping.
+    diag = int((w ** 2 + h ** 2) ** 0.5) + 40
+    tile = Image.new("RGBA", (diag, diag), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(tile)
+
+    try:
+        font = ImageFont.load_default(size=20)
+    except TypeError:
+        font = ImageFont.load_default()
+
+    text = "LINGER PRINTS"
+    step_x, step_y = 220, 90
+    for row, y in enumerate(range(0, diag, step_y)):
+        x_offset = (step_x // 2) if row % 2 else 0
+        for x in range(-step_x + x_offset, diag + step_x, step_x):
+            draw.text((x, y), text, fill=(255, 255, 255, 65), font=font)
+
+    tile = tile.rotate(45)
+    pad_x = (diag - w) // 2
+    pad_y = (diag - h) // 2
+    tile = tile.crop((pad_x, pad_y, pad_x + w, pad_y + h))
+
+    out = Image.alpha_composite(img, tile).convert("RGB")
+    buf = io.BytesIO()
+    out.save(buf, format="JPEG", quality=88)
+    buf.seek(0)
+    return buf
+
+
+@app.route("/preview/<artwork>")
+def preview_artwork(artwork: str):
+    """Watermarked JPEG used on the result page — clean file is reserved for purchase."""
+    if "/" in artwork or "\\" in artwork or not artwork.endswith(".png"):
+        abort(400)
+    path = GENERATED_DIR / artwork
+    if not path.exists():
+        abort(404)
+    buf = _watermarked_preview(Image.open(path))
+    return send_file(buf, mimetype="image/jpeg")
+
+
+@app.route("/download/<artwork>")
+def download_artwork(artwork: str):
+    """
+    Serve a digital download. variant=print upscales 2.5× for large prints;
+    default serves the generated PNG as-is.
+    """
+    # Prevent path traversal — artwork filenames are UUIDs with no slashes.
+    if "/" in artwork or "\\" in artwork or not artwork.endswith(".png"):
+        abort(400)
+
+    path = GENERATED_DIR / artwork
+    if not path.exists():
+        abort(404)
+
+    variant = request.args.get("variant", "standard")
+    if variant == "print":
+        img = Image.open(path)
+        w, h = img.size
+        img = img.resize((int(w * 2.5), int(h * 2.5)), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return send_file(
+            buf,
+            mimetype="image/png",
+            as_attachment=True,
+            download_name="furbaby-portrait-print.png",
+        )
+
+    return send_file(path, as_attachment=True, download_name="furbaby-portrait.png")
 
 
 @app.route("/healthz")

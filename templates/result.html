@@ -1,11 +1,22 @@
 {% extends "base.html" %}
 
-{% block title %}Your AI artwork — AI Photos{% endblock %}
+{% block title %}Your portrait — Linger Prints{% endblock %}
 
 {% block content %}
 <section class="result-hero">
-  <h1>Your artwork is ready</h1>
-  <p class="lead">Style: <strong>{{ style.label }}</strong>. Not quite right? <a href="{{ url_for('index') }}">Try another style →</a></p>
+  <h1>Your portrait is ready</h1>
+  <p class="lead">Style: <strong>{{ style.label }}</strong>. Not quite right for your furbaby? Try another style below — same photo, instant repaint.</p>
+  <form class="restyle-form" method="post" action="{{ url_for('regenerate') }}" id="restyle-form">
+    <div class="restyle-chips">
+      {% for key, s in styles.items() %}
+      <button type="submit" name="style" value="{{ key }}"
+              class="restyle-chip{% if key == style_key %} active{% endif %}">
+        {{ s.label }}
+      </button>
+      {% endfor %}
+    </div>
+  </form>
+  <p class="muted-note" style="margin-top:0.5rem"><a href="{{ url_for('index') }}">Upload a different photo →</a></p>
 </section>
 
 <section class="before-after">
@@ -16,13 +27,13 @@
   </figure>
   {% endif %}
   <figure>
-    <img src="{{ url_for('static', filename='generated/' ~ artwork) }}" alt="AI artwork">
-    <figcaption>AI artwork</figcaption>
+    <img src="{{ url_for('preview_artwork', artwork=artwork) }}" alt="Your portrait">
+    <figcaption>Your portrait</figcaption>
   </figure>
 </section>
 
 <section class="products">
-  <h2>Put it on something beautiful</h2>
+  <h2>Turn it into something they'll treasure</h2>
   <div class="product-grid">
     {% for key, product in products.items() %}
     {% set mockup = product.mockup %}

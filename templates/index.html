@@ -1,48 +1,166 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="hero">
-  <div class="hero-copy">
-    <h1>Your photo. <em>Reimagined</em> as art.</h1>
-    <p class="lead">
-      Upload any photo. Our AI reworks it into a gallery-quality artwork in the
-      style you choose. Then we print and ship it anywhere in the US — canvas,
-      framed, mug, or tee.
-    </p>
+
+{% if has_previous %}
+<section class="previous-photo-banner">
+  <div class="prev-thumb-wrap">
+    <img src="{{ url_for('static', filename='generated/' ~ previous_original) }}" alt="Your pet's photo">
   </div>
-
-  <form class="upload-card" method="post" action="{{ url_for('generate') }}" enctype="multipart/form-data" id="upload-form">
-    <label for="photo">
-      <strong>1. Upload your photo</strong>
-      <input type="file" id="photo" name="photo" accept="image/png,image/jpeg" required>
-    </label>
-
-    <fieldset class="styles">
-      <legend><strong>2. Choose a style</strong></legend>
-      {% for key, style in styles.items() %}
-        <label class="style-chip">
+  <div class="prev-copy">
+    <p><strong>Your pet is still here.</strong> Pick a different style and we'll repaint them instantly.</p>
+    <form method="post" action="{{ url_for('regenerate') }}" id="restyle-banner-form">
+      <div class="prev-style-row">
+        {% for key, style in styles.items() %}
+        <label class="prev-style-chip">
           <input type="radio" name="style" value="{{ key }}" {% if loop.first %}checked{% endif %}>
           <span>{{ style.label }}</span>
         </label>
-      {% endfor %}
+        {% endfor %}
+      </div>
+      <button type="submit" class="prev-submit">Repaint them →</button>
+    </form>
+  </div>
+  <a href="{{ url_for('index') }}" class="prev-dismiss" onclick="this.closest('.previous-photo-banner').remove(); return false;" aria-label="Dismiss">✕</a>
+</section>
+{% endif %}
+
+<section class="hero">
+  <div class="hero-copy">
+    <h1>Your furbaby. <em>Immortalised</em> as art.</h1>
+    <p class="lead">
+      Upload a photo of your pet — any breed, any age, any pose.
+      We transform them into a stunning gallery portrait.
+      Print it on canvas, frame it, wear it — or download it instantly.
+    </p>
+    <ul class="hero-reasons">
+      <li>🐾 Celebrate the one who greets you at the door</li>
+      <li>🎨 Five hand-crafted art styles to choose from</li>
+      <li>📦 Printed &amp; shipped worldwide</li>
+    </ul>
+  </div>
+
+  <form class="upload-card" method="post" action="{{ url_for('generate') }}" enctype="multipart/form-data" id="upload-form">
+
+    {% if pets %}
+    <div class="pet-selector-section">
+      <strong>1. Choose your pet</strong>
+      <div class="pet-selector-row" id="pet-selector-row">
+        {% for pet in pets %}
+        <button type="button" class="pet-thumb-btn" data-pet-id="{{ pet.id }}"
+                aria-label="Select {{ pet.name }}">
+          <img src="{{ url_for('static', filename='generated/' ~ pet.filename) }}" alt="{{ pet.name }}">
+          <span>{{ pet.name }}</span>
+        </button>
+        {% endfor %}
+        <a href="{{ url_for('pets_page') }}" class="pet-thumb-btn pet-thumb-add" title="Manage pets">
+          <span class="pet-add-cross">+</span>
+          <span>Add pet</span>
+        </a>
+      </div>
+      <input type="hidden" name="pet_id" id="pet-id-input" value="">
+      <p class="muted-note upload-toggle-row">
+        <a href="#" id="show-upload-link">Or upload a one-off photo ↓</a>
+      </p>
+    </div>
+    <div id="upload-section" class="upload-section-hidden">
+      <label for="photo">
+        Upload a photo
+        <input type="file" id="photo" name="photo" accept="image/png,image/jpeg">
+      </label>
+    </div>
+    {% else %}
+    <label for="photo">
+      <strong>1. Upload your pet's photo</strong>
+      <input type="file" id="photo" name="photo" accept="image/png,image/jpeg" required>
+    </label>
+    <p class="muted-note"><a href="{{ url_for('pets_page') }}">Save your pet for next time →</a></p>
+    {% endif %}
+
+    <fieldset class="styles">
+      <legend><strong>2. How should we paint them?</strong></legend>
+      <div class="style-grid">
+        {% for key, style in styles.items() %}
+        <label class="style-card">
+          <input type="radio" name="style" value="{{ key }}" {% if loop.first %}checked{% endif %}>
+          <div class="style-card-image">
+            <img src="{{ url_for('static', filename='examples/' ~ key ~ '.jpg') }}"
+                 alt="{{ style.label }} — {{ style.example_breed }}"
+                 onerror="this.closest('.style-card-image').classList.add('no-img')">
+            <div class="style-card-placeholder" aria-hidden="true">{{ style.label[0] }}</div>
+          </div>
+          <div class="style-card-label">
+            <strong>{{ style.label }}</strong>
+            <span class="style-breed">{{ style.example_breed }}</span>
+          </div>
+        </label>
+        {% endfor %}
+      </div>
     </fieldset>
 
     <button type="submit" id="submit-btn">
-      <span class="btn-label">3. Paint my artwork →</span>
+      <span class="btn-label">3. Paint my furbaby →</span>
     </button>
     <p class="muted-note">
-      Typically takes 15–30 seconds. We do not keep your original photo beyond this session.
+      Takes about 20–30 seconds. Your photo is never stored beyond this session.
     </p>
   </form>
 </section>
 
+<section class="product-showcase">
+  <h2>Printed on things you'll love forever</h2>
+  <p class="lead">Every portrait looks stunning across our full range of products.</p>
+  <div class="showcase-grid">
+    <div class="showcase-card showcase-canvas">
+      <div class="showcase-image">
+        <div class="showcase-icon">🖼️</div>
+      </div>
+      <div class="showcase-meta">
+        <strong>Canvas Print</strong>
+        <span>Gallery-wrapped &amp; ready to hang</span>
+        <em>from $59</em>
+      </div>
+    </div>
+    <div class="showcase-card showcase-mug">
+      <div class="showcase-image">
+        <div class="showcase-icon">☕</div>
+      </div>
+      <div class="showcase-meta">
+        <strong>Ceramic Mug</strong>
+        <span>Start every morning with their face</span>
+        <em>from $18</em>
+      </div>
+    </div>
+    <div class="showcase-card showcase-tee">
+      <div class="showcase-image">
+        <div class="showcase-icon">👕</div>
+      </div>
+      <div class="showcase-meta">
+        <strong>Unisex Tee</strong>
+        <span>Wear your love on your sleeve</span>
+        <em>from $39</em>
+      </div>
+    </div>
+    <div class="showcase-card showcase-notebook">
+      <div class="showcase-image">
+        <div class="showcase-icon">📓</div>
+      </div>
+      <div class="showcase-meta">
+        <strong>Notebook</strong>
+        <span>Their portrait on every page</span>
+        <em>from $24</em>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="how">
-  <h2>How it works</h2>
+  <h2>Every pet deserves to hang on the wall</h2>
   <ol class="steps">
-    <li><strong>Upload</strong> a favourite photo — family, pet, landscape, anything.</li>
-    <li><strong>Pick a style</strong> — from classic oil painting to vibrant pop art.</li>
-    <li><strong>Preview</strong> your artwork on canvas, framed prints, mugs and tees.</li>
-    <li><strong>Checkout</strong> — we print and ship it across the United States.</li>
+    <li><strong>Upload</strong> a photo of your pet — any breed, any age, any pose.</li>
+    <li><strong>Choose a style</strong> — regal oil portrait, dreamy watercolour, swirling Van Gogh, and more.</li>
+    <li><strong>Preview</strong> your furbaby as a work of art — on canvas, framed, as a tee, or download instantly.</li>
+    <li><strong>Checkout</strong> — we print and ship worldwide. The perfect gift for any pet lover.</li>
   </ol>
 </section>
 
@@ -50,8 +168,43 @@
   document.getElementById('upload-form').addEventListener('submit', function () {
     var btn = document.getElementById('submit-btn');
     btn.setAttribute('aria-busy', 'true');
-    btn.querySelector('.btn-label').textContent = 'Painting your artwork…';
+    btn.querySelector('.btn-label').textContent = 'Painting your furbaby…';
     btn.disabled = true;
+  });
+
+  // Pet selector
+  var petInput = document.getElementById('pet-id-input');
+  var uploadSection = document.getElementById('upload-section');
+  var showUploadLink = document.getElementById('show-upload-link');
+  var photoInput = document.getElementById('photo');
+
+  document.querySelectorAll('.pet-thumb-btn[data-pet-id]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.pet-thumb-btn').forEach(function(b) { b.classList.remove('selected'); });
+      btn.classList.add('selected');
+      petInput.value = btn.dataset.petId;
+      if (photoInput) photoInput.removeAttribute('required');
+      if (uploadSection) uploadSection.classList.add('upload-section-hidden');
+    });
+  });
+
+  if (showUploadLink) {
+    showUploadLink.addEventListener('click', function(e) {
+      e.preventDefault();
+      document.querySelectorAll('.pet-thumb-btn').forEach(function(b) { b.classList.remove('selected'); });
+      if (petInput) petInput.value = '';
+      if (photoInput) photoInput.setAttribute('required', '');
+      uploadSection.classList.remove('upload-section-hidden');
+      uploadSection.querySelector('input[type=file]').focus();
+    });
+  }
+
+  document.querySelectorAll('.style-card input[type="radio"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      document.querySelectorAll('.style-card').forEach(function(c) { c.classList.remove('selected'); });
+      this.closest('.style-card').classList.add('selected');
+    });
+    if (radio.checked) radio.closest('.style-card').classList.add('selected');
   });
 </script>
 {% endblock %}

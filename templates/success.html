@@ -1,12 +1,17 @@
 {% extends "base.html" %}
 
-{% block title %}Order confirmed — AI Photos{% endblock %}
+{% block title %}Order confirmed — Linger Prints{% endblock %}
 
 {% block content %}
 <section class="success">
   <div class="success-badge">✓</div>
+  {% if has_physical %}
   <h1>Thanks — your artwork is on its way</h1>
   <p class="lead">Order <strong>{{ order_id }}</strong> is confirmed. We'll email {{ customer_email or 'you' }} when it ships.</p>
+  {% else %}
+  <h1>Thanks — your artwork is ready</h1>
+  <p class="lead">Order <strong>{{ order_id }}</strong> is confirmed. Download your file below.</p>
+  {% endif %}
 
   {% if items %}
   <section class="success-items">
@@ -24,6 +29,12 @@
             {% endif %}
             · Qty {{ item.qty }}
           </span>
+          {% if item.is_digital %}
+          <a class="download-link"
+             href="{{ url_for('download_artwork', artwork=item.artwork, variant='print' if item.variant_id == 2 else 'standard') }}">
+            ↓ Download {% if item.variant_id == 2 %}Print-Ready{% else %}Standard{% endif %} PNG
+          </a>
+          {% endif %}
         </div>
         <span class="line-total">${{ '%.2f' % (item.line_cents / 100) }}</span>
       </li>
@@ -36,7 +47,7 @@
   </section>
   {% endif %}
 
-  {% if address %}
+  {% if has_physical and address %}
   <section class="success-address">
     <h3>Shipping to</h3>
     <p>
@@ -48,7 +59,9 @@
   {% endif %}
 
   <p class="muted-note">
-    {% if fulfilment_status == "submitted" %}
+    {% if not has_physical %}
+      Your file is ready to download above. Save it somewhere safe — this link is tied to your session.
+    {% elif fulfilment_status == "submitted" %}
       Your order has been sent to production. You'll receive a shipping confirmation by email once it dispatches.
     {% elif fulfilment_status == "pending" %}
       Your payment is confirmed. We're sending this to production — you'll get a confirmation email with tracking details shortly.
