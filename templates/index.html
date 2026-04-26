@@ -84,7 +84,7 @@
         <label class="style-card">
           <input type="radio" name="style" value="{{ key }}" {% if loop.first %}checked{% endif %}>
           <div class="style-card-image">
-            <img src="{{ url_for('static', filename='examples/' ~ key ~ '.jpg') }}"
+            <img src="{{ url_for('static', filename='examples/' ~ key ~ '.png') }}"
                  alt="{{ style.label }} — {{ style.example_breed }}"
                  onerror="this.closest('.style-card-image').classList.add('no-img')">
             <div class="style-card-placeholder" aria-hidden="true">{{ style.label[0] }}</div>
@@ -98,9 +98,14 @@
       </div>
     </fieldset>
 
-    <button type="submit" id="submit-btn">
-      <span class="btn-label">3. Paint my furbaby →</span>
-    </button>
+    <div class="paint-actions">
+      <button type="submit" id="submit-btn">
+        <span class="btn-label">3. Paint my furbaby →</span>
+      </button>
+      {% if has_artwork %}
+      <a href="{{ url_for('use_last') }}" class="use-last-btn" title="Skip OpenAI — reuse last result">↩ Use last result</a>
+      {% endif %}
+    </div>
     <p class="muted-note">
       Takes about 20–30 seconds. Your photo is never stored beyond this session.
     </p>

@@ -663,14 +663,27 @@ def pet_find(pet_id: str) -> dict | None:
 def index():
     original = session.get("original")
     has_previous = bool(original and (GENERATED_DIR / original).exists())
+    artwork = session.get("artwork")
+    has_artwork = bool(artwork and (GENERATED_DIR / artwork).exists())
     pets = pets_get()
     return render_template(
         "index.html",
         styles=STYLES,
         has_previous=has_previous,
         previous_original=original if has_previous else None,
+        has_artwork=has_artwork,
         pets=pets,
     )
+
+
+@app.route("/use-last")
+def use_last():
+    """Dev shortcut — skip OpenAI and jump straight to /result with the last artwork."""
+    artwork = session.get("artwork")
+    if not artwork or not (GENERATED_DIR / artwork).exists():
+        flash("No previous artwork in session — paint one first.")
+        return redirect(url_for("index"))
+    return redirect(url_for("result"))
 
 
 @app.route("/pets")
