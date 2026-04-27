@@ -842,6 +842,8 @@ def generate():
     session["artwork"] = artwork_filename
     session["original"] = original_filename
     session["style"] = style_key
+    session["pet_name"] = request.form.get("pet_name", "").strip()
+    session["pet_type"] = request.form.get("pet_type", "dog")
     return redirect(url_for("result"))
 
 
@@ -922,6 +924,9 @@ def result():
     if not artwork:
         return redirect(url_for("index"))
 
+    pet_name = session.get("pet_name", "")
+    pet_type = session.get("pet_type", "dog")
+
     return render_template(
         "result.html",
         artwork=artwork,
@@ -930,6 +935,8 @@ def result():
         style_key=style_key,
         styles=STYLES,
         products=PRODUCTS,
+        pet_name=pet_name,
+        pet_type=pet_type,
     )
 
 

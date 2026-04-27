@@ -4,8 +4,8 @@
 
 {% block content %}
 <section class="result-hero">
-  <h1>Your portrait is ready</h1>
-  <p class="lead">Style: <strong>{{ style.label }}</strong>. Not quite right for your furbaby? Try another style below — same photo, instant repaint.</p>
+  <h1>{% if pet_name %}{{ pet_name }}'s portrait is ready{% else %}Your portrait is ready{% endif %}</h1>
+  <p class="lead">Style: <strong>{{ style.label }}</strong>. Not quite right? Try another style below — same photo, instant repaint.</p>
   <form class="restyle-form" method="post" action="{{ url_for('regenerate') }}" id="restyle-form">
     <div class="restyle-chips">
       {% for key, s in styles.items() %}

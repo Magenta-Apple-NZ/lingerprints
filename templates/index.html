@@ -42,82 +42,106 @@
 
   <form class="upload-card" method="post" action="{{ url_for('generate') }}" enctype="multipart/form-data" id="upload-form">
 
-    {% if pets %}
-    <div class="pet-selector-section">
-      <strong>1. Choose your pet</strong>
-      <div class="pet-selector-row" id="pet-selector-row">
-        {% for pet in pets %}
-        <button type="button" class="pet-thumb-btn" data-pet-id="{{ pet.id }}"
-                aria-label="Select {{ pet.name }}">
-          <img src="{{ url_for('static', filename='generated/' ~ pet.filename) }}" alt="{{ pet.name }}">
-          <span>{{ pet.name }}</span>
-        </button>
-        {% endfor %}
-        <a href="{{ url_for('pets_page') }}" class="pet-thumb-btn pet-thumb-add" title="Manage pets">
-          <span class="pet-add-cross">+</span>
-          <span>Add pet</span>
-        </a>
-      </div>
-      <input type="hidden" name="pet_id" id="pet-id-input" value="">
-      <p class="muted-note upload-toggle-row">
-        <a href="#" id="show-upload-link">Or upload a one-off photo ↓</a>
-      </p>
-    </div>
-    <div id="upload-section" class="upload-section-hidden">
-      <label for="photo">
-        Upload a photo
-        <input type="file" id="photo" name="photo" accept="image/png,image/jpeg">
-      </label>
-    </div>
-    {% else %}
-    <label for="photo">
-      <strong>1. Upload your pet's photo</strong>
-      <input type="file" id="photo" name="photo" accept="image/png,image/jpeg" required>
-    </label>
-    <p class="muted-note"><a href="{{ url_for('pets_page') }}">Save your pet for next time →</a></p>
-    {% endif %}
+    <!-- ── Step 1: About your pet ── -->
+    <div class="form-step">
+      <div class="step-badge">1</div>
+      <div class="step-content">
+        <strong class="step-label">Tell us about your pet</strong>
 
-    <fieldset class="styles">
-      <div class="styles-legend-row">
-        <legend><strong>2. How should we paint them?</strong></legend>
-        <div class="pet-type-toggle" role="group" aria-label="Preview pet type">
-          <button type="button" class="pet-type-btn active" data-type="dog">🐶 Dog</button>
-          <button type="button" class="pet-type-btn" data-type="cat">🐱 Cat</button>
+        <div class="pet-info-row">
+          <input type="text" name="pet_name" id="pet-name-input"
+                 placeholder="Their name…" maxlength="40" autocomplete="off"
+                 class="pet-name-field">
+
+          <div class="pet-type-toggle" role="group" aria-label="Dog or cat">
+            <label class="pet-type-option">
+              <input type="radio" name="pet_type" value="dog" checked>
+              <span>🐶 Dog</span>
+            </label>
+            <label class="pet-type-option">
+              <input type="radio" name="pet_type" value="cat">
+              <span>🐱 Cat</span>
+            </label>
+          </div>
+        </div>
+
+        {% if pets %}
+        <div class="pet-selector-row" id="pet-selector-row">
+          {% for pet in pets %}
+          <button type="button" class="pet-thumb-btn" data-pet-id="{{ pet.id }}"
+                  data-pet-name="{{ pet.name }}" aria-label="Select {{ pet.name }}">
+            <img src="{{ url_for('static', filename='generated/' ~ pet.filename) }}" alt="{{ pet.name }}">
+            <span>{{ pet.name }}</span>
+          </button>
+          {% endfor %}
+          <a href="{{ url_for('pets_page') }}" class="pet-thumb-btn pet-thumb-add" title="Manage pets">
+            <span class="pet-add-cross">+</span>
+            <span>Add pet</span>
+          </a>
+        </div>
+        <input type="hidden" name="pet_id" id="pet-id-input" value="">
+
+        <div id="upload-section" class="upload-section-hidden">
+          <label for="photo" class="upload-label">
+            <span class="upload-label-text">📷 Upload a photo</span>
+            <input type="file" id="photo" name="photo" accept="image/png,image/jpeg">
+          </label>
+        </div>
+        <p class="muted-note upload-toggle-row">
+          <a href="#" id="show-upload-link">Or upload a one-off photo ↓</a>
+        </p>
+
+        {% else %}
+        <label for="photo" class="upload-label">
+          <span class="upload-label-text">📷 Upload a photo</span>
+          <input type="file" id="photo" name="photo" accept="image/png,image/jpeg" required>
+        </label>
+        <p class="muted-note"><a href="{{ url_for('pets_page') }}">Save your pet for next time →</a></p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ── Step 2: Choose a style ── -->
+    <div class="form-step">
+      <div class="step-badge">2</div>
+      <div class="step-content">
+        <strong class="step-label">Choose a style</strong>
+        <div class="style-carousel" id="style-carousel">
+          {% for key, style in styles.items() %}
+          <label class="style-card" data-style-key="{{ key }}">
+            <input type="radio" name="style" value="{{ key }}" {% if loop.first %}checked{% endif %}>
+            <div class="style-card-image">
+              <img class="style-example-img"
+                   src="{{ url_for('static', filename='examples/' ~ key ~ '.png') }}"
+                   data-dog="{{ url_for('static', filename='examples/' ~ key ~ '.png') }}"
+                   data-cat="{{ url_for('static', filename='examples/' ~ key ~ '_cat.png') }}"
+                   alt="{{ style.label }}"
+                   onerror="this.closest('.style-card-image').classList.add('no-img')">
+              <div class="style-card-placeholder" aria-hidden="true">{{ style.label[0] }}</div>
+            </div>
+            <div class="style-card-label">
+              <strong>{{ style.label }}</strong>
+              <span class="style-breed"
+                    data-dog="{{ style.example_breed }}"
+                    data-cat="{{ style.example_breed_cat or style.example_breed }}">{{ style.example_breed }}</span>
+            </div>
+          </label>
+          {% endfor %}
         </div>
       </div>
-      <div class="style-carousel" id="style-carousel">
-        {% for key, style in styles.items() %}
-        <label class="style-card" data-style-key="{{ key }}">
-          <input type="radio" name="style" value="{{ key }}" {% if loop.first %}checked{% endif %}>
-          <div class="style-card-image">
-            <img class="style-example-img"
-                 src="{{ url_for('static', filename='examples/' ~ key ~ '.png') }}"
-                 data-dog="{{ url_for('static', filename='examples/' ~ key ~ '.png') }}"
-                 data-cat="{{ url_for('static', filename='examples/' ~ key ~ '_cat.png') }}"
-                 alt="{{ style.label }} — {{ style.example_breed }}"
-                 onerror="this.closest('.style-card-image').classList.add('no-img')">
-            <div class="style-card-placeholder" aria-hidden="true">{{ style.label[0] }}</div>
-          </div>
-          <div class="style-card-label">
-            <strong>{{ style.label }}</strong>
-            <span class="style-breed" data-dog="{{ style.example_breed }}" data-cat="{{ style.example_breed_cat or style.example_breed }}">{{ style.example_breed }}</span>
-          </div>
-        </label>
-        {% endfor %}
-      </div>
-    </fieldset>
+    </div>
 
+    <!-- ── Step 3: Paint ── -->
     <div class="paint-actions">
       <button type="submit" id="submit-btn">
-        <span class="btn-label">3. Paint my furbaby →</span>
+        <span class="btn-label">Paint <span id="pet-name-display">my dog</span> →</span>
       </button>
       {% if has_artwork %}
       <a href="{{ url_for('use_last') }}" class="use-last-btn" title="Skip OpenAI — reuse last result">↩ Use last result</a>
       {% endif %}
     </div>
-    <p class="muted-note">
-      Takes about 20–30 seconds. Your photo is never stored beyond this session.
-    </p>
+    <p class="muted-note">Takes about 20–30 seconds. Your photo is never stored beyond this session.</p>
+
   </form>
 </section>
 
@@ -200,24 +224,61 @@
 </section>
 
 <script>
+  // ── Live button label ──
+  var nameInput   = document.getElementById('pet-name-input');
+  var nameDisplay = document.getElementById('pet-name-display');
+  var currentType = 'dog';
+
+  function updateButtonLabel() {
+    var name = nameInput ? nameInput.value.trim() : '';
+    nameDisplay.textContent = name || ('my ' + currentType);
+  }
+
+  if (nameInput) nameInput.addEventListener('input', updateButtonLabel);
+
+  // ── Pet type toggle (radio) — drives carousel + button label ──
+  document.querySelectorAll('input[name="pet_type"]').forEach(function(radio) {
+    radio.addEventListener('change', function() {
+      currentType = this.value;
+      updateButtonLabel();
+      document.querySelectorAll('.style-example-img').forEach(function(img) {
+        var newSrc = img.dataset[currentType];
+        if (newSrc) {
+          img.src = newSrc;
+          img.closest('.style-card-image').classList.remove('no-img');
+        }
+      });
+      document.querySelectorAll('.style-breed').forEach(function(el) {
+        el.textContent = el.dataset[currentType] || el.dataset.dog;
+      });
+    });
+  });
+
+  // ── Submit loading state ──
   document.getElementById('upload-form').addEventListener('submit', function () {
     var btn = document.getElementById('submit-btn');
+    var name = nameInput ? nameInput.value.trim() : '';
     btn.setAttribute('aria-busy', 'true');
-    btn.querySelector('.btn-label').textContent = 'Painting your furbaby…';
+    btn.querySelector('.btn-label').textContent = 'Painting ' + (name || 'your furbaby') + '…';
     btn.disabled = true;
   });
 
-  // Pet selector
-  var petInput = document.getElementById('pet-id-input');
+  // ── Saved pet selector ──
+  var petInput      = document.getElementById('pet-id-input');
   var uploadSection = document.getElementById('upload-section');
   var showUploadLink = document.getElementById('show-upload-link');
-  var photoInput = document.getElementById('photo');
+  var photoInput    = document.getElementById('photo');
 
   document.querySelectorAll('.pet-thumb-btn[data-pet-id]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       document.querySelectorAll('.pet-thumb-btn').forEach(function(b) { b.classList.remove('selected'); });
       btn.classList.add('selected');
-      petInput.value = btn.dataset.petId;
+      if (petInput) petInput.value = btn.dataset.petId;
+      // Auto-fill name from saved pet
+      if (nameInput && btn.dataset.petName) {
+        nameInput.value = btn.dataset.petName;
+        updateButtonLabel();
+      }
       if (photoInput) photoInput.removeAttribute('required');
       if (uploadSection) uploadSection.classList.add('upload-section-hidden');
     });
@@ -234,33 +295,13 @@
     });
   }
 
-  // Style card selection
+  // ── Style card selection highlight ──
   document.querySelectorAll('.style-card input[type="radio"]').forEach(function(radio) {
     radio.addEventListener('change', function() {
       document.querySelectorAll('.style-card').forEach(function(c) { c.classList.remove('selected'); });
       this.closest('.style-card').classList.add('selected');
     });
     if (radio.checked) radio.closest('.style-card').classList.add('selected');
-  });
-
-  // Dog / cat toggle
-  document.querySelectorAll('.pet-type-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var type = this.dataset.type;
-      document.querySelectorAll('.pet-type-btn').forEach(function(b) { b.classList.remove('active'); });
-      this.classList.add('active');
-
-      document.querySelectorAll('.style-example-img').forEach(function(img) {
-        var newSrc = img.dataset[type];
-        if (newSrc) {
-          img.src = newSrc;
-          img.closest('.style-card-image').classList.remove('no-img');
-        }
-      });
-      document.querySelectorAll('.style-breed').forEach(function(el) {
-        el.textContent = el.dataset[type] || el.dataset.dog;
-      });
-    });
   });
 </script>
 {% endblock %}
