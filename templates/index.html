@@ -121,9 +121,6 @@
             </div>
             <div class="style-card-label">
               <strong>{{ style.label }}</strong>
-              <span class="style-breed"
-                    data-dog="{{ style.example_breed }}"
-                    data-cat="{{ style.example_breed_cat or style.example_breed }}">{{ style.example_breed }}</span>
             </div>
           </label>
           {% endfor %}
@@ -247,9 +244,6 @@
           img.src = newSrc;
           img.closest('.style-card-image').classList.remove('no-img');
         }
-      });
-      document.querySelectorAll('.style-breed').forEach(function(el) {
-        el.textContent = el.dataset[currentType] || el.dataset.dog;
       });
     });
   });

@@ -340,7 +340,6 @@ h1 em { font-style: italic; color: var(--accent); }
   gap: 0.06rem;
 }
 .style-card-label strong { font-size: 0.72rem; line-height: 1.2; }
-.style-breed { font-size: 0.65rem; color: var(--muted); }
 
 /* ----- Pet selector (homepage) ----- */
 .pet-selector-section { display: flex; flex-direction: column; gap: 0.6rem; }

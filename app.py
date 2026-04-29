@@ -159,7 +159,7 @@ def pick_output_size(img: Image.Image) -> str:
         return "1024x1536"   # portrait
     return "1024x1024"       # square-ish
 
-PRINTIFY_SHOP_ID = "27218866"
+PRINTIFY_SHOP_ID = "27218748"
 
 # --------------------------------------------------------------------------
 # Product mockups
@@ -191,85 +191,48 @@ PRODUCTS = {
             {"id": 1, "label": "Standard (share & small prints)", "price_cents": 99},
             {"id": 2, "label": "Print-Ready (large canvas & frames)", "price_cents": 999},
         ],
-        "mockup": {"url": "https://images.printify.com/mockup/69e1f53cf03babfb2f075654/111817/107084/matte-canvas-framed-multi-color.jpg?camera_label=front", "print_area": {}, "blend": "normal"},
+        "mockup": {"url": "", "print_area": {}, "blend": "normal"},
     },
-    "framed_canvas": {
-        "name": 'Framed Canvas Print',
-        "blurb": '12×16" gallery-wrapped canvas in a premium frame.',
-        "blueprint_id": 944,
-        "print_provider_id": 99,
-        "printify_product_id": "69e1f53cf03babfb2f075654",
-        "print_position": "front",
-        "option_label": "Frame Colour",
-        "variants": [
-            {"id": 88292,  "label": "Black",    "price_cents": 9900},
-            {"id": 107252, "label": "Espresso",  "price_cents": 9900},
-            {"id": 244029, "label": "Natural",   "price_cents": 9900},
-            {"id": 107253, "label": "White",     "price_cents": 9900},
-        ],
-        "mockup": {
-            "url": "",
-            "print_area": {"top": 22, "left": 32, "width": 36, "height": 50},
-            "blend": "normal",
-        },
-    },
-    "stretched_canvas": {
-        "name": 'Stretched Canvas Print',
-        "blurb": '12×16" gallery-wrapped canvas, frameless and ready to hang.',
-        "blueprint_id": 1159,
-        "print_provider_id": 99,
-        "printify_product_id": "69e1f4942ed6a28c54063562",
+    "canvas": {
+        "name": 'Canvas Print',
+        "blurb": 'Matte gallery-wrapped canvas, frameless and ready to hang.',
+        # TODO: blueprint_id + print_provider_id — refresh /admin/printify
+        # (now exposes them on each product) and paste here.
+        "blueprint_id": None,
+        "print_provider_id": None,
+        "printify_product_id": "69f261e45f78c14a7b0a4b93",
         "print_position": "front",
         "option_label": None,
         "variants": [
-            {"id": 91643, "label": '12×16"', "price_cents": 5900},
+            {"id": 101412, "label": '10″ × 8″', "price_cents": 3900},
         ],
         "mockup": {
-            "url": "https://images.printify.com/mockup/69e1f4942ed6a28c54063562/101412/95789/matte-canvas-stretched-125.jpg?camera_label=front",
+            "url": "",
             "print_area": {"top": 18, "left": 27, "width": 46, "height": 60},
             "blend": "multiply",
         },
     },
-    "poster": {
-        "name": 'Rolled Poster',
-        "blurb": '12×16" high-quality print, rolled for safe delivery.',
-        "blueprint_id": 1220,
-        "print_provider_id": 99,
-        "printify_product_id": "69e1f462596268421f0a48b9",
+    "mug": {
+        "name": 'Ceramic Mug',
+        "blurb": 'Start every morning with their face. Dishwasher-safe ceramic.',
+        # TODO: blueprint_id + print_provider_id — refresh /admin/printify
+        # (now exposes them on each product) and paste here.
+        "blueprint_id": None,
+        "print_provider_id": None,
+        "printify_product_id": "69f26147e64c9f31b70f53db",
         "print_position": "front",
-        "option_label": "Finish",
+        "option_label": None,
         "variants": [
-            {"id": 101883, "label": "Matte",       "price_cents": 3500},
-            {"id": 101832, "label": "Semi Glossy", "price_cents": 3500},
+            {"id": 65216, "label": "11oz", "price_cents": 2400},
         ],
         "mockup": {
-            "url": "https://images.printify.com/mockup/69e1f462596268421f0a48b9/92393/97404/rolled-posters.jpg?camera_label=front",
-            "print_area": {"top": 10, "left": 18, "width": 35, "height": 72},
-            "blend": "normal",
-        },
-    },
-    "tee": {
-        "name": 'Unisex T-Shirt',
-        "blurb": 'Soft 100% cotton. Your artwork on the front.',
-        "blueprint_id": 12,
-        "print_provider_id": 99,
-        "printify_product_id": "69e1f427820f4311710d16ba",
-        "print_position": "front",
-        "option_label": "Size",
-        "variants": [
-            {"id": 18540, "label": "S",   "price_cents": 3900},
-            {"id": 18541, "label": "M",   "price_cents": 3900},
-            {"id": 18542, "label": "L",   "price_cents": 3900},
-            {"id": 18543, "label": "XL",  "price_cents": 3900},
-            {"id": 18544, "label": "2XL", "price_cents": 4500},
-            {"id": 18545, "label": "3XL", "price_cents": 4900},
-        ],
-        "mockup": {
-            "url": "https://images.printify.com/mockup/69e1f427820f4311710d16ba/18542/102044/unisex-jersey-short-sleeve-tee.jpg?camera_label=front-2",
-            "print_area": {"top": 26, "left": 36, "width": 28, "height": 32},
+            "url": "",
+            "print_area": {"top": 25, "left": 30, "width": 40, "height": 50},
             "blend": "multiply",
         },
     },
+    # TODO: notebook — no Printify product exists yet. Create one in the
+    # API store, then add an entry here using the same shape as canvas/mug.
 }
 
 # --------------------------------------------------------------------------
