@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Shipping — Linger Prints{% endblock %}
+
+{% block content %}
+<section class="shipping-hero">
+  <h1>Where are we sending it?</h1>
+  <p class="lead">We'll quote real shipping from our print partner so there are no surprises at checkout.</p>
+</section>
+
+<section class="shipping-form">
+  <form method="POST" action="{{ url_for('checkout_shipping') }}">
+    <label for="country">
+      Country
+      <select id="country" name="country" required>
+        <option value="">Choose a country…</option>
+        {% for c in countries %}
+        <option value="{{ c }}">{{ c }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <div class="grid">
+      <label for="region">
+        State / region
+        <input type="text" id="region" name="region" autocomplete="address-level1" maxlength="60">
+      </label>
+      <label for="zip">
+        Postal code
+        <input type="text" id="zip" name="zip" autocomplete="postal-code" maxlength="20" required>
+      </label>
+    </div>
+
+    <p class="muted-note">
+      Subtotal so far: <strong>${{ '%.2f' % (subtotal_cents / 100) }}</strong>.
+      Shipping is calculated next; you'll confirm payment on Stripe.
+    </p>
+
+    <div class="cart-actions">
+      <a href="{{ url_for('cart_view') }}" role="button" class="secondary">Back to cart</a>
+      <button type="submit">Quote shipping &amp; continue →</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

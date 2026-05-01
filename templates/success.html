@@ -31,7 +31,7 @@
           </span>
           {% if item.is_digital %}
           <a class="download-link"
-             href="{{ url_for('download_artwork', artwork=item.artwork, variant='print' if item.variant_id == 2 else 'standard') }}">
+             href="{{ url_for('download_artwork', artwork=item.artwork) }}">
             ↓ Download {% if item.variant_id == 2 %}Print-Ready{% else %}Standard{% endif %} PNG
           </a>
           {% endif %}

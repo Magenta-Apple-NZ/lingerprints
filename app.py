@@ -35,8 +35,11 @@ from flask import (
     session,
     url_for,
 )
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from openai import OpenAI
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 load_dotenv()
 
@@ -46,6 +49,26 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-only-change-me")
 # Cap uploads at 8MB — we'll downsize to 1024px below before sending to OpenAI.
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
+
+# Render (and most PaaS) terminate TLS at a proxy and forward the real client
+# IP in X-Forwarded-For. Without ProxyFix, every request looks like it came
+# from the proxy — so the rate limiter would treat all visitors as one IP.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+
+# Per-IP rate limit on the OpenAI-spending routes. In-memory storage is fine
+# for single-instance Render; switch storage_uri to redis:// if we scale out.
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri="memory://",
+)
+
+
+@app.errorhandler(429)
+def ratelimit_handler(_):
+    flash("You're generating images very quickly — please wait a few minutes and try again.")
+    return redirect(url_for("index"))
 
 GENERATED_DIR = Path(app.static_folder) / "generated"
 GENERATED_DIR.mkdir(parents=True, exist_ok=True)
@@ -196,10 +219,8 @@ PRODUCTS = {
     "canvas": {
         "name": 'Canvas Print',
         "blurb": 'Matte gallery-wrapped canvas, frameless and ready to hang.',
-        # TODO: blueprint_id + print_provider_id — refresh /admin/printify
-        # (now exposes them on each product) and paste here.
-        "blueprint_id": None,
-        "print_provider_id": None,
+        "blueprint_id": 1159,
+        "print_provider_id": 99,
         "printify_product_id": "69f261e45f78c14a7b0a4b93",
         "print_position": "front",
         "option_label": None,
@@ -207,7 +228,7 @@ PRODUCTS = {
             {"id": 101412, "label": '10″ × 8″', "price_cents": 3900},
         ],
         "mockup": {
-            "url": "",
+            "url": "https://images-api.printify.com/mockup/69f261e45f78c14a7b0a4b93/101412/95813/matte-canvas-stretched-125.jpg?camera_label=context-1",
             "print_area": {"top": 18, "left": 27, "width": 46, "height": 60},
             "blend": "multiply",
         },
@@ -215,10 +236,8 @@ PRODUCTS = {
     "mug": {
         "name": 'Ceramic Mug',
         "blurb": 'Start every morning with their face. Dishwasher-safe ceramic.',
-        # TODO: blueprint_id + print_provider_id — refresh /admin/printify
-        # (now exposes them on each product) and paste here.
-        "blueprint_id": None,
-        "print_provider_id": None,
+        "blueprint_id": 478,
+        "print_provider_id": 99,
         "printify_product_id": "69f26147e64c9f31b70f53db",
         "print_position": "front",
         "option_label": None,
@@ -226,7 +245,7 @@ PRODUCTS = {
             {"id": 65216, "label": "11oz", "price_cents": 2400},
         ],
         "mockup": {
-            "url": "",
+            "url": "https://images-api.printify.com/mockup/69f26147e64c9f31b70f53db/65216/71754/blank-white-ceramic-mug.jpg?camera_label=context-7",
             "print_area": {"top": 25, "left": 30, "width": 40, "height": 50},
             "blend": "multiply",
         },
@@ -272,6 +291,46 @@ def upload_artwork_to_printify(artwork_path: Path) -> str:
     )
     resp.raise_for_status()
     return resp.json()["preview_url"]
+
+
+def get_printify_shipping_quote(items: list[dict], address: dict) -> int | None:
+    """
+    Ask Printify what standard shipping costs for the physical items in this
+    cart to the given address. Returns cents, or None if no rate is available.
+    Raises on transport errors so the caller can flash a message.
+    """
+    line_items = []
+    for item in items:
+        if item.get("is_digital"):
+            continue
+        product = PRODUCTS.get(item["product_key"], {})
+        if not product.get("blueprint_id") or not product.get("print_provider_id"):
+            continue
+        line_items.append({
+            "blueprint_id": product["blueprint_id"],
+            "print_provider_id": product["print_provider_id"],
+            "variant_id": item["variant_id"],
+            "quantity": item["qty"],
+        })
+    if not line_items:
+        return 0
+
+    resp = requests.post(
+        f"https://api.printify.com/v1/shops/{PRINTIFY_SHOP_ID}/orders/shipping.json",
+        headers=_printify_headers(),
+        json={"line_items": line_items, "address_to": address},
+        timeout=20,
+    )
+    if not resp.ok:
+        app.logger.error("Printify shipping quote failed %s: %s", resp.status_code, resp.text)
+        resp.raise_for_status()
+    rates = resp.json() or {}
+    # Prefer "standard"; fall back to the cheapest non-zero option Printify returned.
+    standard = rates.get("standard")
+    if isinstance(standard, int) and standard > 0:
+        return standard
+    candidates = [v for v in rates.values() if isinstance(v, int) and v > 0]
+    return min(candidates) if candidates else None
 
 
 def create_printify_order(payload: dict) -> str:
@@ -732,6 +791,7 @@ def _load_image_for_generation(pet_id: str | None, file) -> tuple[Image.Image | 
 
 
 @app.route("/generate", methods=["POST"])
+@limiter.limit("5 per hour; 20 per day")
 def generate():
     pet_id = request.form.get("pet_id", "").strip() or None
     style_key = request.form.get("style", "oil")
@@ -811,6 +871,7 @@ def generate():
 
 
 @app.route("/regenerate", methods=["POST"])
+@limiter.limit("5 per hour; 20 per day")
 def regenerate():
     """Re-run generation on the stored original with a different style."""
     style_key = request.form.get("style", "oil")
@@ -964,16 +1025,20 @@ def cart_clear_route():
     return redirect(url_for("index"))
 
 
-@app.route("/checkout", methods=["GET", "POST"])
-def checkout():
-    cart = cart_get()
-    if not cart:
-        flash("Your cart is empty.")
-        return redirect(url_for("index"))
+SHIPPING_COUNTRIES = ["US", "NZ", "AU", "GB", "CA"]
 
-    items = cart_items_decorated(cart)
 
-    # Build Stripe line_items from the cart.
+def _start_stripe_checkout(
+    cart: list[dict],
+    items: list[dict],
+    shipping_cents: int,
+    shipping_country: str | None,
+):
+    """
+    Build the Stripe Checkout session and redirect to it. Shared by both the
+    digital-only path (no shipping) and the physical path (Printify-quoted
+    shipping passed in as a fixed shipping_option).
+    """
     line_items = []
     for item in items:
         name = f"Linger Prints — {item['product_name']}"
@@ -991,9 +1056,7 @@ def checkout():
             "quantity": item["qty"],
         })
 
-    has_physical = any(
-        not PRODUCTS.get(item["product_key"], {}).get("digital") for item in cart
-    )
+    has_physical = shipping_country is not None
 
     try:
         _ensure_stripe()
@@ -1001,36 +1064,114 @@ def checkout():
             mode="payment",
             line_items=line_items,
             metadata={
-                # Lightweight marker only — full cart is stashed in the Flask
-                # session under 'pending' keyed by the Stripe session id so the
-                # cookie survives the Stripe redirect round-trip.
+                # Lightweight marker only — full cart is stashed server-side
+                # in orders.json keyed by the Stripe session id so the
+                # webhook can read it without the user's session cookie.
                 "cart_line_count": str(len(cart)),
             },
             success_url=url_for("success", _external=True) + "?session_id={CHECKOUT_SESSION_ID}",
             cancel_url=url_for("cart_view", _external=True),
         )
         if has_physical:
+            # Lock the country to the one we quoted shipping for, so the
+            # customer can't switch to a more expensive zone after the quote.
             create_kwargs["shipping_address_collection"] = {
-                "allowed_countries": ["US", "NZ", "AU", "GB", "CA"]
+                "allowed_countries": [shipping_country],
             }
+            create_kwargs["shipping_options"] = [{
+                "shipping_rate_data": {
+                    "type": "fixed_amount",
+                    "fixed_amount": {"amount": shipping_cents, "currency": "usd"},
+                    "display_name": "Standard shipping",
+                },
+            }]
         checkout_session = stripe.checkout.Session.create(**create_kwargs)
     except Exception as exc:
         app.logger.exception("Stripe checkout create failed")
         flash(f"Checkout unavailable right now. ({exc.__class__.__name__})")
         return redirect(url_for("cart_view"))
 
-    # Persist the cart server-side keyed by the Stripe session id. This is
-    # the record the webhook will read when it fires — the Flask session
-    # cookie is invisible to the webhook because the webhook request comes
-    # from Stripe, not the customer's browser.
     register_pending_order(checkout_session.id, cart)
-
-    # Also keep a hint in the user's session cookie so /success knows which
-    # checkout just happened (for cart-clearing UX, not for fulfilment).
     session["pending_sid"] = checkout_session.id
     session.modified = True
-
     return redirect(checkout_session.url, code=303)
+
+
+@app.route("/checkout", methods=["POST"])
+def checkout():
+    cart = cart_get()
+    if not cart:
+        flash("Your cart is empty.")
+        return redirect(url_for("index"))
+
+    items = cart_items_decorated(cart)
+    has_physical = any(not item["is_digital"] for item in items)
+
+    # Physical items need a Printify shipping quote before we can build the
+    # Stripe session — bounce through the shipping page to collect the
+    # destination and call Printify's /shipping endpoint.
+    if has_physical:
+        return redirect(url_for("checkout_shipping"))
+
+    return _start_stripe_checkout(cart, items, shipping_cents=0, shipping_country=None)
+
+
+@app.route("/checkout/shipping", methods=["GET", "POST"])
+def checkout_shipping():
+    cart = cart_get()
+    if not cart:
+        flash("Your cart is empty.")
+        return redirect(url_for("index"))
+
+    items = cart_items_decorated(cart)
+    has_physical = any(not item["is_digital"] for item in items)
+    if not has_physical:
+        # Digital-only — no quote needed, go straight to Stripe.
+        return _start_stripe_checkout(cart, items, shipping_cents=0, shipping_country=None)
+
+    subtotal_cents = cart_total_cents(cart)
+
+    if request.method == "GET":
+        return render_template(
+            "shipping.html",
+            items=items,
+            subtotal_cents=subtotal_cents,
+            countries=SHIPPING_COUNTRIES,
+        )
+
+    country = (request.form.get("country") or "").strip().upper()
+    region = (request.form.get("region") or "").strip()
+    zip_code = (request.form.get("zip") or "").strip()
+    if country not in SHIPPING_COUNTRIES:
+        flash("Please choose a country we ship to.")
+        return redirect(url_for("checkout_shipping"))
+    if not zip_code:
+        flash("Please enter a postal code so we can quote shipping.")
+        return redirect(url_for("checkout_shipping"))
+
+    # Printify wants address1/city populated; the cost depends on
+    # country/region/zip in practice. Stripe will collect the real address
+    # at payment.
+    address = {
+        "country": country,
+        "region": region,
+        "address1": "—",
+        "city": "—",
+        "zip": zip_code,
+    }
+
+    try:
+        shipping_cents = get_printify_shipping_quote(items, address)
+    except Exception as exc:
+        app.logger.exception("Printify shipping quote failed")
+        flash(f"We couldn't quote shipping right now. ({exc.__class__.__name__})")
+        return redirect(url_for("checkout_shipping"))
+
+    if shipping_cents is None:
+        flash("Printify doesn't have a shipping rate for that location yet. Try a different postal code.")
+        return redirect(url_for("checkout_shipping"))
+
+    return _start_stripe_checkout(cart, items, shipping_cents=shipping_cents, shipping_country=country)
 
 
 @app.route("/success")
@@ -1053,6 +1194,14 @@ def success():
         app.logger.exception("Stripe session retrieve failed")
         flash(f"We couldn't load your order. ({exc.__class__.__name__})")
         return redirect(url_for("index"))
+
+    # Don't grant downloads or clear the cart unless Stripe says the
+    # session was actually paid. Without this, a buyer could start a
+    # checkout, abandon it, then visit /success?session_id=<their sid>
+    # to unlock digital downloads for free.
+    if checkout_session.payment_status != "paid":
+        flash("Your payment hasn't completed yet. If you just paid, give it a moment and refresh.")
+        return redirect(url_for("cart_view"))
 
     customer_details = checkout_session.customer_details
     shipping_address = customer_details.address if customer_details else None
@@ -1081,6 +1230,19 @@ def success():
     if session.get("pending_sid") == session_id:
         session.pop("pending_sid", None)
         cart_clear()
+        # Grant download access for any digital items the buyer paid for.
+        # Stored on the buyer's Flask session, so a leaked /success URL
+        # can't unlock downloads for a third party.
+        if has_digital:
+            paid = dict(session.get("paid_downloads") or {})
+            for item in items:
+                if not item.get("is_digital"):
+                    continue
+                existing = paid.get(item["artwork"], 0)
+                # Higher variant_id = better tier (1=standard, 2=print-ready).
+                paid[item["artwork"]] = max(existing, int(item["variant_id"]))
+            session["paid_downloads"] = paid
+            session.modified = True
 
     return render_template(
         "success.html",
@@ -1283,19 +1445,25 @@ def preview_artwork(artwork: str):
 @app.route("/download/<artwork>")
 def download_artwork(artwork: str):
     """
-    Serve a digital download. variant=print upscales 2.5× for large prints;
-    default serves the generated PNG as-is.
+    Serve a digital download. The variant served is whatever the buyer paid
+    for (recorded in session['paid_downloads'] when they completed checkout)
+    — the URL doesn't take a variant param, so a standard buyer can't
+    upgrade themselves to print-ready by tweaking the query string.
     """
-    # Prevent path traversal — artwork filenames are UUIDs with no slashes.
     if "/" in artwork or "\\" in artwork or not artwork.endswith(".png"):
         abort(400)
+
+    paid = session.get("paid_downloads") or {}
+    paid_variant = paid.get(artwork)
+    if not paid_variant:
+        abort(403)
 
     path = GENERATED_DIR / artwork
     if not path.exists():
         abort(404)
 
-    variant = request.args.get("variant", "standard")
-    if variant == "print":
+    # variant_id 2 = print-ready (2.5× upscale). Anything lower = standard.
+    if int(paid_variant) >= 2:
         img = Image.open(path)
         w, h = img.size
         img = img.resize((int(w * 2.5), int(h * 2.5)), Image.LANCZOS)

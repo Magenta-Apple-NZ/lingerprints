@@ -1,4 +1,5 @@
 flask==3.0.3
+Flask-Limiter==3.8.0
 python-dotenv==1.0.1
 openai>=1.75.0
 stripe==11.1.0
