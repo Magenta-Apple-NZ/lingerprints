@@ -37,8 +37,13 @@
   <div class="product-grid">
     {% for key, product in products.items() %}
     {% set mockup = product.mockup %}
+    {% set rendered = mockups.get(key) %}
     <article class="product product-{{ key }}">
-      {% if mockup and mockup.url %}
+      {% if rendered and rendered.urls %}
+      <div class="product-mockup product-mockup-rendered">
+        <img class="mockup-rendered-img" src="{{ rendered.urls[0] }}" alt="{{ product.name }} preview">
+      </div>
+      {% elif mockup and mockup.url %}
       <div class="product-mockup product-mockup-real">
         <img class="mockup-base" src="{{ mockup.url }}" alt="{{ product.name }} mockup">
         <img class="mockup-art" src="{{ url_for('static', filename='generated/' ~ artwork) }}"

@@ -5,29 +5,32 @@
 {% block content %}
 <section class="shipping-hero">
   <h1>Where are we sending it?</h1>
-  <p class="lead">We'll quote real shipping from our print partner so there are no surprises at checkout.</p>
+  <p class="lead">We currently ship to the United States. We'll quote real shipping from our print partner so there are no surprises at checkout.</p>
 </section>
 
 <section class="shipping-form">
   <form method="POST" action="{{ url_for('checkout_shipping') }}">
-    <label for="country">
-      Country
-      <select id="country" name="country" required>
-        <option value="">Choose a country…</option>
-        {% for c in countries %}
-        <option value="{{ c }}">{{ c }}</option>
-        {% endfor %}
-      </select>
+    <input type="hidden" name="country" value="US">
+
+    {% if google_maps_api_key %}
+    <label for="address-autocomplete" class="address-autocomplete-label">
+      Search for your address
+      <gmp-place-autocomplete
+        id="address-autocomplete"
+        included-region-codes="us"
+        placeholder="Start typing your US address…"></gmp-place-autocomplete>
+      <span class="muted-note">Pick a result and we'll fill the rest. You can still edit below.</span>
     </label>
+    {% endif %}
 
     <div class="grid">
       <label for="region">
-        State / region
-        <input type="text" id="region" name="region" autocomplete="address-level1" maxlength="60">
+        State
+        <input type="text" id="region" name="region" autocomplete="address-level1" maxlength="60" placeholder="e.g. CA">
       </label>
       <label for="zip">
-        Postal code
-        <input type="text" id="zip" name="zip" autocomplete="postal-code" maxlength="20" required>
+        ZIP code
+        <input type="text" id="zip" name="zip" autocomplete="postal-code" inputmode="numeric" pattern="\d{5}(-\d{4})?" maxlength="10" required placeholder="e.g. 94110">
       </label>
     </div>
 
@@ -42,4 +45,33 @@
     </div>
   </form>
 </section>
+
+{% if google_maps_api_key %}
+<script>
+  // Wired up once the Maps JS bundle finishes loading. The
+  // <gmp-place-autocomplete> element fires `gmp-select` when the user
+  // picks a result; we fetch the address components and fill the
+  // visible state + ZIP fields. Manual entry remains available.
+  async function initAddressAutocomplete() {
+    await google.maps.importLibrary("places");
+    const ac = document.getElementById("address-autocomplete");
+    if (!ac) return;
+    ac.addEventListener("gmp-select", async (event) => {
+      const place = event.placePrediction.toPlace();
+      await place.fetchFields({ fields: ["addressComponents"] });
+      const components = place.addressComponents || [];
+      const find = (type) => components.find(c => (c.types || []).includes(type));
+      const stateComp = find("administrative_area_level_1");
+      const zipComp = find("postal_code");
+      const regionInput = document.getElementById("region");
+      const zipInput = document.getElementById("zip");
+      if (stateComp && regionInput) regionInput.value = stateComp.shortText || stateComp.longText || "";
+      if (zipComp && zipInput) zipInput.value = zipComp.longText || "";
+    });
+  }
+</script>
+<script async
+  src="https://maps.googleapis.com/maps/api/js?key={{ google_maps_api_key }}&v=weekly&loading=async&libraries=places&callback=initAddressAutocomplete">
+</script>
+{% endif %}
 {% endblock %}

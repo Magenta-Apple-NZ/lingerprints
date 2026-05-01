@@ -777,6 +777,22 @@ h1 em { font-style: italic; color: var(--accent); }
 .product-mockup-digital_download img { max-width: 88%; max-height: 88%; display: block; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
 .product-mockup img { max-width: 100%; max-height: 100%; display: block; }
 
+/* Printify-rendered mockup — already composited server-side, just show it */
+.product-mockup-rendered {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  background: #f0ebe1;
+}
+.product-mockup-rendered .mockup-rendered-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  max-width: none;
+  max-height: none;
+}
+
 /* Real Printify mockup — artwork composited on actual product photo */
 .product-mockup-real {
   position: relative;
@@ -1286,4 +1302,15 @@ h1 em { font-style: italic; color: var(--accent); }
   border-radius: 5px;
   background: #fafaf7;
   color: var(--muted);
+}
+
+/* ----- Shipping address autocomplete ----- */
+.address-autocomplete-label {
+  display: block;
+  margin-bottom: 1rem;
+}
+.address-autocomplete-label gmp-place-autocomplete {
+  display: block;
+  width: 100%;
+  margin: 0.4rem 0 0.3rem;
 }

@@ -280,8 +280,12 @@ def _printify_headers() -> dict:
     return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
 
 
-def upload_artwork_to_printify(artwork_path: Path) -> str:
-    """Upload artwork PNG to Printify and return the CDN preview URL."""
+def upload_artwork_to_printify(artwork_path: Path) -> dict:
+    """
+    Upload artwork PNG to Printify. Returns {"id": ..., "preview_url": ...}.
+    `id` is needed to attach the image to a product (mockup generation);
+    `preview_url` is what we pass into print_areas when creating an order.
+    """
     contents = base64.b64encode(artwork_path.read_bytes()).decode()
     resp = requests.post(
         "https://api.printify.com/v1/uploads/images.json",
@@ -290,7 +294,8 @@ def upload_artwork_to_printify(artwork_path: Path) -> str:
         timeout=60,
     )
     resp.raise_for_status()
-    return resp.json()["preview_url"]
+    data = resp.json()
+    return {"id": data["id"], "preview_url": data["preview_url"]}
 
 
 def get_printify_shipping_quote(items: list[dict], address: dict) -> int | None:
@@ -331,6 +336,148 @@ def get_printify_shipping_quote(items: list[dict], address: dict) -> int | None:
         return standard
     candidates = [v for v in rates.values() if isinstance(v, int) and v > 0]
     return min(candidates) if candidates else None
+
+
+def create_printify_preview_product(image_id: str, product: dict) -> tuple[str, list[str]]:
+    """
+    Create a draft Printify product so its mockup generator renders the
+    user's artwork onto the real product photo. Returns (product_id, urls).
+
+    The product is left in the shop (Printify has no standalone mockup
+    endpoint) — clean it up later via /admin/cleanup-previews.
+    """
+    variant_ids = [v["id"] for v in product["variants"]]
+    payload = {
+        "title": "Preview (auto-generated)",
+        "description": "Auto-generated preview render. Safe to delete.",
+        "blueprint_id": product["blueprint_id"],
+        "print_provider_id": product["print_provider_id"],
+        "variants": [
+            {"id": vid, "price": 1000, "is_enabled": True} for vid in variant_ids
+        ],
+        "print_areas": [
+            {
+                "variant_ids": variant_ids,
+                "placeholders": [
+                    {
+                        "position": product["print_position"],
+                        "images": [
+                            {"id": image_id, "x": 0.5, "y": 0.5, "scale": 1.0, "angle": 0}
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    resp = requests.post(
+        f"https://api.printify.com/v1/shops/{PRINTIFY_SHOP_ID}/products.json",
+        headers=_printify_headers(),
+        json=payload,
+        timeout=60,
+    )
+    if not resp.ok:
+        app.logger.error("Printify preview product create failed %s: %s", resp.status_code, resp.text)
+        resp.raise_for_status()
+    data = resp.json()
+    product_id = data.get("id", "")
+    images = data.get("images") or []
+    # Prefer mockups for the configured print position, fall back to all of them.
+    position = product["print_position"]
+    urls = [img["src"] for img in images if img.get("position") == position]
+    if not urls:
+        urls = [img["src"] for img in images if img.get("src")]
+    return product_id, urls
+
+
+def delete_printify_product(product_id: str) -> None:
+    """Best-effort delete of a Printify product. Logs but does not raise."""
+    try:
+        resp = requests.delete(
+            f"https://api.printify.com/v1/shops/{PRINTIFY_SHOP_ID}/products/{product_id}.json",
+            headers=_printify_headers(),
+            timeout=15,
+        )
+        if not resp.ok:
+            app.logger.warning("Printify delete %s failed %s: %s", product_id, resp.status_code, resp.text[:200])
+    except Exception:
+        app.logger.exception("Printify delete %s threw", product_id)
+
+
+def _physical_products() -> list[tuple[str, dict]]:
+    return [
+        (k, v) for k, v in PRODUCTS.items()
+        if not v.get("digital") and v.get("blueprint_id") and v.get("print_provider_id")
+    ]
+
+
+def generate_preview_mockups(artwork_filename: str) -> dict:
+    """
+    Upload the artwork to Printify, then in parallel create a draft product
+    per physical SKU so Printify renders real mockup images. Persisted to
+    static/generated/<artwork>.mockups.json so /result can read them later.
+
+    Returns the same dict that gets persisted, of shape:
+      {<product_key>: {"product_id": str, "urls": [str, ...]}}
+
+    On any failure, returns {} — callers fall back to the CSS overlay.
+    """
+    import concurrent.futures
+
+    artwork_path = GENERATED_DIR / artwork_filename
+    if not artwork_path.exists():
+        return {}
+
+    try:
+        upload = upload_artwork_to_printify(artwork_path)
+    except Exception:
+        app.logger.exception("Printify upload failed during mockup generation")
+        return {}
+
+    image_id = upload["id"]
+    products = _physical_products()
+    if not products:
+        return {}
+
+    def _render(item):
+        key, product = item
+        try:
+            product_id, urls = create_printify_preview_product(image_id, product)
+            return key, {"product_id": product_id, "urls": urls}
+        except Exception:
+            app.logger.exception("Mockup render failed for %s", key)
+            return key, None
+
+    mockups: dict = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(products))) as ex:
+        for key, payload in ex.map(_render, products):
+            if payload and payload.get("urls"):
+                mockups[key] = payload
+
+    if mockups:
+        save_mockups(artwork_filename, mockups)
+    return mockups
+
+
+def _mockup_path(artwork_filename: str) -> Path:
+    return GENERATED_DIR / f"{artwork_filename}.mockups.json"
+
+
+def save_mockups(artwork_filename: str, mockups: dict) -> None:
+    try:
+        _mockup_path(artwork_filename).write_text(json.dumps(mockups))
+    except Exception:
+        app.logger.exception("Couldn't persist mockups for %s", artwork_filename)
+
+
+def load_mockups(artwork_filename: str) -> dict:
+    path = _mockup_path(artwork_filename)
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        app.logger.warning("Mockups file unreadable for %s", artwork_filename)
+        return {}
 
 
 def create_printify_order(payload: dict) -> str:
@@ -602,7 +749,8 @@ def fulfil_checkout(checkout_session) -> tuple[bool, str]:
         if artwork in artwork_urls:
             continue
         try:
-            artwork_urls[artwork] = upload_artwork_to_printify(GENERATED_DIR / artwork)
+            upload = upload_artwork_to_printify(GENERATED_DIR / artwork)
+            artwork_urls[artwork] = upload["preview_url"]
         except Exception as exc:
             app.logger.exception("Printify image upload failed for %s", artwork)
             artwork_urls[artwork] = ""
@@ -862,6 +1010,14 @@ def generate():
     del png_bytes, buf, img, image_bytes, result
     gc.collect()
 
+    # Render real product mockups via Printify so /result shows the
+    # artwork on the actual product photos. Best-effort — falls back
+    # to the CSS overlay if Printify is unavailable.
+    try:
+        generate_preview_mockups(artwork_filename)
+    except Exception:
+        app.logger.exception("generate_preview_mockups raised")
+
     session["artwork"] = artwork_filename
     session["original"] = original_filename
     session["style"] = style_key
@@ -935,6 +1091,11 @@ def regenerate():
     del png_bytes, buf, image_bytes, result_obj
     gc.collect()
 
+    try:
+        generate_preview_mockups(artwork_filename)
+    except Exception:
+        app.logger.exception("generate_preview_mockups raised")
+
     session["artwork"] = artwork_filename
     session["style"] = style_key
     return redirect(url_for("result"))
@@ -950,6 +1111,7 @@ def result():
 
     pet_name = session.get("pet_name", "")
     pet_type = session.get("pet_type", "dog")
+    mockups = load_mockups(artwork)
 
     return render_template(
         "result.html",
@@ -961,6 +1123,7 @@ def result():
         products=PRODUCTS,
         pet_name=pet_name,
         pet_type=pet_type,
+        mockups=mockups,
     )
 
 
@@ -1025,7 +1188,7 @@ def cart_clear_route():
     return redirect(url_for("index"))
 
 
-SHIPPING_COUNTRIES = ["US", "NZ", "AU", "GB", "CA"]
+SHIPPING_COUNTRIES = ["US"]
 
 
 def _start_stripe_checkout(
@@ -1137,6 +1300,7 @@ def checkout_shipping():
             items=items,
             subtotal_cents=subtotal_cents,
             countries=SHIPPING_COUNTRIES,
+            google_maps_api_key=os.environ.get("GOOGLE_MAPS_API_KEY", ""),
         )
 
     country = (request.form.get("country") or "").strip().upper()
@@ -1394,6 +1558,64 @@ def admin_mockups():
         results.append(entry)
 
     return render_template("admin_mockups.html", results=results)
+
+
+@app.route("/admin/cleanup-previews", methods=["GET", "POST"])
+def admin_cleanup_previews():
+    """
+    Mockup generation creates a draft Printify product per (artwork × SKU).
+    They accumulate in the Printify shop. This endpoint deletes any older
+    than `min_age_hours` (default 24) and removes the local <artwork>.mockups.json
+    pointer files. POST to actually delete; GET shows a preview.
+    """
+    admin_token = os.environ.get("ADMIN_TOKEN")
+    if not admin_token or request.args.get("token") != admin_token:
+        abort(404)
+
+    min_age_hours = request.args.get("min_age_hours", default=24, type=int)
+    cutoff = datetime.now(timezone.utc).timestamp() - max(0, min_age_hours) * 3600
+
+    candidates = []
+    for path in GENERATED_DIR.glob("*.mockups.json"):
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if mtime > cutoff:
+            continue
+        try:
+            data = json.loads(path.read_text())
+        except Exception:
+            data = {}
+        product_ids = [
+            v["product_id"] for v in data.values()
+            if isinstance(v, dict) and v.get("product_id")
+        ]
+        candidates.append({"path": path, "product_ids": product_ids, "mtime": mtime})
+
+    if request.method == "GET":
+        lines = [f"Cleanup preview — {len(candidates)} mockup files older than {min_age_hours}h.\n"]
+        for c in candidates:
+            lines.append(f"  {c['path'].name}: would delete {len(c['product_ids'])} Printify product(s)")
+        lines.append("\nPOST to this URL (with the same token) to actually delete.")
+        return "\n".join(lines), 200, {"Content-Type": "text/plain"}
+
+    deleted_products = 0
+    deleted_files = 0
+    for c in candidates:
+        for pid in c["product_ids"]:
+            delete_printify_product(pid)
+            deleted_products += 1
+        try:
+            c["path"].unlink()
+            deleted_files += 1
+        except OSError:
+            app.logger.exception("Couldn't unlink %s", c["path"])
+    return (
+        f"Deleted {deleted_products} Printify product(s) and {deleted_files} mockup file(s).",
+        200,
+        {"Content-Type": "text/plain"},
+    )
 
 
 def _watermarked_preview(img: Image.Image) -> io.BytesIO:

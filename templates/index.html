@@ -114,7 +114,7 @@
               <img class="style-example-img"
                    src="{{ url_for('static', filename='examples/' ~ key ~ '.png') }}"
                    data-dog="{{ url_for('static', filename='examples/' ~ key ~ '.png') }}"
-                   data-cat="{{ url_for('static', filename='examples/' ~ key ~ '_cat.png') }}"
+                   data-cat="{{ url_for('static', filename='examples/' ~ key ~ '.png') }}"
                    alt="{{ style.label }}"
                    onerror="this.closest('.style-card-image').classList.add('no-img')">
               <div class="style-card-placeholder" aria-hidden="true">{{ style.label[0] }}</div>
